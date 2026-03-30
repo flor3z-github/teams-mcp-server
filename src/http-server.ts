@@ -84,6 +84,9 @@ function startHttpModeServer(
           if (!sessionId && isInitializeRequest(parsed)) {
             const transport = new StreamableHTTPServerTransport({
               sessionIdGenerator: () => crypto.randomUUID(),
+              onsessioninitialized: (sid) => {
+                transports.set(sid, transport);
+              },
             });
 
             transport.onclose = () => {
@@ -92,11 +95,6 @@ function startHttpModeServer(
             };
 
             await mcp.connect(transport);
-
-            // sessionId를 저장하기 위해 onsessioninitialized 사용
-            const sid = (transport as any).sessionId as string;
-            if (sid) transports.set(sid, transport);
-
             await transport.handleRequest(req, res, parsed);
             return;
           }
