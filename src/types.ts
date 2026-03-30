@@ -1,36 +1,3 @@
-// ─── Teams Outgoing Webhook 페이로드 ───
-
-export interface TeamsOutgoingWebhookPayload {
-  type: "message";
-  id: string;
-  timestamp: string;
-  localTimestamp: string;
-  serviceUrl: string;
-  channelId: string;
-  from: {
-    id: string;
-    name: string;
-    aadObjectId: string;
-  };
-  conversation: {
-    id: string;
-    name: string;
-  };
-  recipient: {
-    id: string;
-    name: string;
-  };
-  text: string;
-  textFormat: "plain" | "markdown";
-  channelData: {
-    teamsChannelId: string;
-    teamsTeamId: string;
-    channel: { id: string };
-    team: { id: string };
-    tenant: { id: string };
-  };
-}
-
 // ─── Access Control 타입 ───
 
 export interface PendingEntry {

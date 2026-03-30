@@ -17,7 +17,7 @@ function loadEnvFile(): void {
   try {
     chmodSync(envPath, 0o600);
   } catch {
-    // 권한 변경 실패는 무시 (읽기만 가능한 환경)
+    // 권한 변경 실패 무시
   }
 
   const content = readFileSync(envPath, "utf8");
@@ -35,11 +35,13 @@ function loadEnvFile(): void {
 }
 
 const configSchema = z.object({
-  webhookSecret: z.string().min(1, "TEAMS_WEBHOOK_SECRET is required"),
-  incomingWebhookUrl: z
-    .string()
-    .url("TEAMS_INCOMING_WEBHOOK_URL must be a valid URL"),
-  port: z.number().int().min(1).max(65535).default(8788),
+  appId: z.string().min(1, "MICROSOFT_APP_ID is required"),
+  appPassword: z.string().min(1, "MICROSOFT_APP_PASSWORD is required"),
+  tenantId: z.string().min(1, "MICROSOFT_APP_TENANT_ID is required"),
+  appType: z
+    .enum(["SingleTenant", "MultiTenant"])
+    .default("SingleTenant"),
+  port: z.number().int().min(1).max(65535).default(3978),
   stateDir: z.string().default(STATE_DIR_DEFAULT),
   logLevel: z.enum(["debug", "info", "warn", "error"]).default("info"),
 });
@@ -51,15 +53,17 @@ export function loadConfig(): Config {
 
   try {
     return configSchema.parse({
-      webhookSecret: process.env.TEAMS_WEBHOOK_SECRET,
-      incomingWebhookUrl: process.env.TEAMS_INCOMING_WEBHOOK_URL,
-      port: Number(process.env.TEAMS_PORT) || 8788,
+      appId: process.env.MICROSOFT_APP_ID,
+      appPassword: process.env.MICROSOFT_APP_PASSWORD,
+      tenantId: process.env.MICROSOFT_APP_TENANT_ID,
+      appType: process.env.MICROSOFT_APP_TYPE || "SingleTenant",
+      port: Number(process.env.TEAMS_PORT) || 3978,
       stateDir: process.env.TEAMS_STATE_DIR || STATE_DIR_DEFAULT,
       logLevel: process.env.LOG_LEVEL || "info",
     });
   } catch (error) {
     if (error instanceof z.ZodError) {
-      process.stderr.write("teams channel: configuration errors:\n");
+      process.stderr.write("teams chat: configuration errors:\n");
       for (const issue of error.issues) {
         process.stderr.write(`  - ${issue.path.join(".")}: ${issue.message}\n`);
       }

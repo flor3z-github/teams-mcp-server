@@ -1,6 +1,7 @@
 import type { Server as McpServer } from "@modelcontextprotocol/sdk/server/index.js";
 import { z } from "zod";
 import type { Config } from "./config.js";
+import { sendViaBot, getLastActiveConversation } from "./sender.js";
 
 export function setupPermissionRelay(mcp: McpServer, config: Config): void {
   mcp.setNotificationHandler(
@@ -23,33 +24,18 @@ export function setupPermissionRelay(mcp: McpServer, config: Config): void {
         `**Permission request** [${request_id}]\n\n` +
         `**${tool_name}**: ${description}\n` +
         preview +
-        `@mention the bot and reply:\n` +
+        `Reply:\n` +
         `- \`yes ${request_id}\` to allow\n` +
         `- \`no ${request_id}\` to deny`;
 
       try {
-        await fetch(config.incomingWebhookUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            type: "message",
-            attachments: [
-              {
-                contentType: "application/vnd.microsoft.card.adaptive",
-                contentUrl: null,
-                content: {
-                  $schema: "http://adaptivecards.io/schemas/adaptive-card.json",
-                  type: "AdaptiveCard",
-                  version: "1.4",
-                  body: [{ type: "TextBlock", text, wrap: true }],
-                },
-              },
-            ],
-          }),
-        });
+        const convId = getLastActiveConversation();
+        if (convId) {
+          await sendViaBot(convId, text, config);
+        }
       } catch (err) {
         process.stderr.write(
-          `teams channel: failed to send permission request: ${err}\n`,
+          `teams chat: failed to send permission request: ${err}\n`,
         );
       }
     },

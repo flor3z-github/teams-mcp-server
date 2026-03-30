@@ -2,9 +2,10 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { handleReply } from "../../src/tools/reply.js";
 import type { Config } from "../../src/config.js";
 
-// Mock webhook module
-vi.mock("../../src/webhook.js", () => ({
-  sendToTeams: vi.fn().mockResolvedValue(1),
+// Mock sender module
+vi.mock("../../src/sender.js", () => ({
+  sendViaBot: vi.fn().mockResolvedValue(1),
+  getLastActiveConversation: vi.fn().mockReturnValue("conv-1"),
 }));
 
 // Mock access module
@@ -20,9 +21,11 @@ vi.mock("../../src/access.js", () => ({
 }));
 
 const config: Config = {
-  webhookSecret: "dGVzdA==",
-  incomingWebhookUrl: "https://example.com/webhook",
-  port: 8788,
+  appId: "test-app-id",
+  appPassword: "test-password",
+  tenantId: "test-tenant",
+  appType: "SingleTenant",
+  port: 3978,
   stateDir: "/tmp/teams-test",
   logLevel: "error",
 };
@@ -38,8 +41,8 @@ describe("reply tool", () => {
   });
 
   it("should report chunk count when message is split", async () => {
-    const { sendToTeams } = await import("../../src/webhook.js");
-    (sendToTeams as ReturnType<typeof vi.fn>).mockResolvedValueOnce(3);
+    const { sendViaBot } = await import("../../src/sender.js");
+    (sendViaBot as ReturnType<typeof vi.fn>).mockResolvedValueOnce(3);
 
     const result = await handleReply({ text: "Long message..." }, config);
     expect(result.content[0].text).toBe("Message sent to Teams (3 chunks).");

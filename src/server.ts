@@ -7,9 +7,12 @@ import {
 import type { Config } from "./config.js";
 import { tools, toolHandlers } from "./tools/index.js";
 import { formatErrorResponse } from "./utils/errors.js";
-import { startHttpServer } from "./http.js";
+import { createBotAdapter, createBotHandler } from "./bot.js";
+import { setAdapter } from "./sender.js";
 import { setupPermissionRelay } from "./permission.js";
+import { loadFromDisk } from "./conversations.js";
 import { pollApproved, loadAccess, saveAccess } from "./access.js";
+import { sendViaBot } from "./sender.js";
 
 const INSTRUCTIONS = [
   "The sender reads Teams, not this session. Anything you want them",
@@ -21,9 +24,9 @@ const INSTRUCTIONS = [
   'user_id="..." ts="...">message content</channel>',
   "Reply with the reply tool — pass chat_id back.",
   "",
-  "Teams Incoming Webhooks can only send new messages — editing,",
-  "reactions, threading, and file attachments are not available.",
-  "The reply tool sends plain text or markdown.",
+  "The bot supports 1:1 chats, group chats, and channels.",
+  "In 1:1 chats, users don't need to @mention the bot.",
+  "In group chats and channels, users must @mention the bot.",
   "",
   "Access is managed by the /teams:access skill — the user runs it",
   "in their terminal. Never invoke that skill, edit access.json, or",
@@ -34,8 +37,12 @@ const INSTRUCTIONS = [
 ].join("\n");
 
 export async function runServer(config: Config): Promise<void> {
+  // ConversationReference 복원
+  loadFromDisk(config);
+
+  // MCP 서버
   const mcp = new Server(
-    { name: "teams", version: "0.1.0" },
+    { name: "teams", version: "0.2.0" },
     {
       capabilities: {
         tools: {},
@@ -48,12 +55,8 @@ export async function runServer(config: Config): Promise<void> {
     },
   );
 
-  // 도구 목록
-  mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools,
-  }));
-
-  // 도구 실행
+  // 도구 핸들러
+  mcp.setRequestHandler(ListToolsRequestSchema, async () => ({ tools }));
   mcp.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args } = request.params;
     const handler = toolHandlers[name];
@@ -76,14 +79,45 @@ export async function runServer(config: Config): Promise<void> {
   // Permission relay
   setupPermissionRelay(mcp, config);
 
-  // HTTP 서버
-  const httpServer = startHttpServer(mcp, config);
+  // Bot Framework
+  const adapter = createBotAdapter(config);
+  const handler = createBotHandler(mcp, config);
+  setAdapter(adapter, config.appId);
+
+  // HTTP 서버 — Bot Framework 엔드포인트
+  const httpServer = Bun.serve({
+    port: config.port,
+    hostname: "0.0.0.0",
+    async fetch(req) {
+      const url = new URL(req.url);
+
+      if (req.method === "POST" && url.pathname === "/api/messages") {
+        try {
+          const res = await adapter.process(req, handler);
+          return res as Response;
+        } catch (err) {
+          process.stderr.write(`teams chat: adapter.process error: ${err}\n`);
+          return new Response("Internal Server Error", { status: 500 });
+        }
+      }
+
+      if (req.method === "GET" && url.pathname === "/health") {
+        return Response.json({ status: "ok", ts: new Date().toISOString() });
+      }
+
+      return new Response("Not Found", { status: 404 });
+    },
+  });
+
+  process.stderr.write(
+    `teams chat: Bot server listening on 0.0.0.0:${config.port}\n`,
+  );
 
   // stdio transport
   const transport = new StdioServerTransport();
   await mcp.connect(transport);
 
-  // approved/ 폴링 — pairing 승인 감지 후 Incoming Webhook으로 확인 메시지 전송
+  // approved/ 폴링
   const approvedInterval = setInterval(async () => {
     const ids = pollApproved(config);
     for (const senderId of ids) {
@@ -92,40 +126,23 @@ export async function runServer(config: Config): Promise<void> {
         ([, e]) => e.senderId === senderId,
       );
       const name = pending ? pending[1].senderName : senderId;
-      // pending에서 제거하고 allowFrom에 추가
-      if (pending) {
-        delete access.pending[pending[0]];
-      }
+      const chatId = pending?.[1]?.chatId;
+      if (pending) delete access.pending[pending[0]];
       if (!access.allowFrom.includes(senderId)) {
         access.allowFrom.push(senderId);
       }
       saveAccess(access, config);
 
-      // 채널에 확인 메시지 전송
-      try {
-        await fetch(config.incomingWebhookUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            type: "message",
-            attachments: [{
-              contentType: "application/vnd.microsoft.card.adaptive",
-              contentUrl: null,
-              content: {
-                $schema: "http://adaptivecards.io/schemas/adaptive-card.json",
-                type: "AdaptiveCard",
-                version: "1.4",
-                body: [{
-                  type: "TextBlock",
-                  text: `${name} has been approved and can now interact with Claude.`,
-                  wrap: true,
-                }],
-              },
-            }],
-          }),
-        });
-      } catch {
-        // 전송 실패 무시
+      if (chatId) {
+        try {
+          await sendViaBot(
+            chatId,
+            `${name} has been approved and can now interact with Claude.`,
+            config,
+          );
+        } catch {
+          /* 전송 실패 무시 */
+        }
       }
     }
   }, 5000);
@@ -135,7 +152,7 @@ export async function runServer(config: Config): Promise<void> {
   function shutdown(): void {
     if (shuttingDown) return;
     shuttingDown = true;
-    process.stderr.write("teams channel: shutting down\n");
+    process.stderr.write("teams chat: shutting down\n");
     clearInterval(approvedInterval);
     httpServer.stop();
     setTimeout(() => process.exit(0), 2000);

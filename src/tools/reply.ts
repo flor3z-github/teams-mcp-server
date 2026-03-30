@@ -2,15 +2,15 @@ import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import type { Config } from "../config.js";
 import { assertAllowedChat, assertSendable } from "../access.js";
-import { sendToTeams } from "../webhook.js";
+import { sendViaBot, getLastActiveConversation } from "../sender.js";
 import { validateInput } from "../utils/validators.js";
 
 export const replyTool: Tool = {
   name: "reply",
   description:
-    "Reply to a Teams channel message. " +
-    "Use this tool to send a response back to the Teams channel. " +
-    "Long messages are automatically chunked to fit Teams' 28KB limit.",
+    "Reply to a Teams chat message. " +
+    "Use this tool to send a response back to the Teams conversation. " +
+    "Long messages are automatically chunked.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -44,7 +44,12 @@ export async function handleReply(
 
   assertSendable(text, config);
 
-  const sentCount = await sendToTeams(text, config);
+  const conversationId = chat_id || getLastActiveConversation();
+  if (!conversationId) {
+    throw new Error("No active conversation to reply to.");
+  }
+
+  const sentCount = await sendViaBot(conversationId, text, config);
 
   return {
     content: [
