@@ -9,6 +9,7 @@ import { tools, toolHandlers } from "./tools/index.js";
 import { formatErrorResponse } from "./utils/errors.js";
 import { startHttpServer } from "./http.js";
 import { setupPermissionRelay } from "./permission.js";
+import { pollApproved, loadAccess, saveAccess } from "./access.js";
 
 const INSTRUCTIONS = [
   "The sender reads Teams, not this session. Anything you want them",
@@ -82,12 +83,47 @@ export async function runServer(config: Config): Promise<void> {
   const transport = new StdioServerTransport();
   await mcp.connect(transport);
 
+  // approved/ 폴링 — pairing 승인 감지 후 Incoming Webhook으로 확인 메시지 전송
+  const approvedInterval = setInterval(async () => {
+    const ids = pollApproved(config);
+    for (const senderId of ids) {
+      const access = loadAccess(config);
+      const pending = Object.entries(access.pending).find(
+        ([, e]) => e.senderId === senderId,
+      );
+      const name = pending ? pending[1].senderName : senderId;
+      // pending에서 제거하고 allowFrom에 추가
+      if (pending) {
+        delete access.pending[pending[0]];
+      }
+      if (!access.allowFrom.includes(senderId)) {
+        access.allowFrom.push(senderId);
+      }
+      saveAccess(access, config);
+
+      // 채널에 확인 메시지 전송
+      try {
+        await fetch(config.incomingWebhookUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            type: "message",
+            text: `${name} has been approved and can now interact with Claude.`,
+          }),
+        });
+      } catch {
+        // 전송 실패 무시
+      }
+    }
+  }, 5000);
+
   // Graceful shutdown
   let shuttingDown = false;
   function shutdown(): void {
     if (shuttingDown) return;
     shuttingDown = true;
     process.stderr.write("teams channel: shutting down\n");
+    clearInterval(approvedInterval);
     httpServer.stop();
     setTimeout(() => process.exit(0), 2000);
   }

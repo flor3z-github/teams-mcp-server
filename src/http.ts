@@ -1,3 +1,4 @@
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { Server as McpServer } from "@modelcontextprotocol/sdk/server/index.js";
 import type { Config } from "./config.js";
 import { verifyHmac } from "./hmac.js";
@@ -10,21 +11,53 @@ export interface HttpServer {
   stop(): void;
 }
 
-export function startHttpServer(mcp: McpServer, config: Config): HttpServer {
-  const server = Bun.serve({
-    port: config.port,
-    hostname: "0.0.0.0",
-    async fetch(req) {
-      const url = new URL(req.url);
+function readBody(req: IncomingMessage): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    req.on("data", (chunk: Buffer) => chunks.push(chunk));
+    req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+    req.on("error", reject);
+  });
+}
 
+function jsonResponse(
+  res: ServerResponse,
+  status: number,
+  data: unknown,
+): void {
+  const body = JSON.stringify(data);
+  res.writeHead(status, {
+    "Content-Type": "application/json",
+    "Content-Length": Buffer.byteLength(body),
+  });
+  res.end(body);
+}
+
+function textResponse(
+  res: ServerResponse,
+  status: number,
+  text: string,
+): void {
+  res.writeHead(status, {
+    "Content-Type": "text/plain",
+    "Content-Length": Buffer.byteLength(text),
+  });
+  res.end(text);
+}
+
+export function startHttpServer(mcp: McpServer, config: Config): HttpServer {
+  const server = createServer(async (req, res) => {
+    const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
+
+    try {
       // ─── Outgoing Webhook 수신 ───
       if (req.method === "POST" && url.pathname === "/webhook") {
-        const body = await req.text();
+        const body = await readBody(req);
 
         // 1. HMAC 검증
-        const authHeader = req.headers.get("authorization") || "";
+        const authHeader = req.headers["authorization"] || "";
         if (!verifyHmac(body, authHeader, config.webhookSecret)) {
-          return new Response("Unauthorized", { status: 401 });
+          return textResponse(res, 401, "Unauthorized");
         }
 
         // 2. 페이로드 파싱
@@ -32,7 +65,7 @@ export function startHttpServer(mcp: McpServer, config: Config): HttpServer {
         try {
           payload = JSON.parse(body);
         } catch {
-          return new Response("Bad Request", { status: 400 });
+          return textResponse(res, 400, "Bad Request");
         }
 
         // 3. 멘션 태그 제거
@@ -51,7 +84,7 @@ export function startHttpServer(mcp: McpServer, config: Config): HttpServer {
               behavior: approved ? "allow" : "deny",
             },
           });
-          return Response.json({
+          return jsonResponse(res, 200, {
             type: "message",
             text: approved ? "Allowed." : "Denied.",
           });
@@ -62,7 +95,7 @@ export function startHttpServer(mcp: McpServer, config: Config): HttpServer {
         const gateResult = gate(senderId, payload.from.name, config);
 
         if (gateResult.action === "pairing") {
-          return Response.json({
+          return jsonResponse(res, 200, {
             type: "message",
             text:
               `Pairing required.\n` +
@@ -71,7 +104,7 @@ export function startHttpServer(mcp: McpServer, config: Config): HttpServer {
           });
         }
         if (gateResult.action === "deny") {
-          return new Response("Forbidden", { status: 403 });
+          return textResponse(res, 403, "Forbidden");
         }
 
         // 6. Notification meta
@@ -93,7 +126,7 @@ export function startHttpServer(mcp: McpServer, config: Config): HttpServer {
         });
 
         // 8. ACK 응답
-        return Response.json({
+        return jsonResponse(res, 200, {
           type: "message",
           text: "Processing...",
         });
@@ -101,20 +134,30 @@ export function startHttpServer(mcp: McpServer, config: Config): HttpServer {
 
       // ─── 헬스체크 ───
       if (req.method === "GET" && url.pathname === "/health") {
-        return Response.json({ status: "ok", ts: new Date().toISOString() });
+        return jsonResponse(res, 200, {
+          status: "ok",
+          ts: new Date().toISOString(),
+        });
       }
 
-      return new Response("Not Found", { status: 404 });
-    },
+      textResponse(res, 404, "Not Found");
+    } catch (err) {
+      process.stderr.write(`teams channel: HTTP handler error: ${err}\n`);
+      if (!res.headersSent) {
+        textResponse(res, 500, "Internal Server Error");
+      }
+    }
   });
 
-  process.stderr.write(
-    `teams channel: HTTP server listening on 0.0.0.0:${config.port}\n`,
-  );
+  server.listen(config.port, "0.0.0.0", () => {
+    process.stderr.write(
+      `teams channel: HTTP server listening on 0.0.0.0:${config.port}\n`,
+    );
+  });
 
   return {
     stop() {
-      server.stop();
+      server.close();
     },
   };
 }
