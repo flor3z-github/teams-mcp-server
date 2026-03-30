@@ -1,17 +1,19 @@
-# Teams Chat Plugin for Claude Code
+# Teams MCP Server for Claude Code
 
 ## 개요
 
-Microsoft Bot Framework를 활용하여 Claude Code Channels를 구현하는 MCP 서버 플러그인.
-Teams 1:1 채팅, 그룹 채팅, 채널에서 봇에게 메시지를 보내면 Claude Code 세션으로 전달되고, Claude의 응답이 같은 대화에 표시된다.
+Microsoft Teams용 MCP 서버. 두 가지 모드를 지원한다:
+
+- **Channel 모드 (stdio)** — Bot Framework + Claude Code Channel 프로토콜. Teams 채팅에서 실시간 대화.
+- **Tool Server 모드 (HTTP)** — Graph API 기반 11개 도구. Azure Bot 등록 불필요. Docker 배포 가능.
 
 ### 핵심 컨셉
 
-- **Channel = MCP 서버** — `claude/channel` + `claude/channel/permission` capability를 선언하고 `notifications/claude/channel` 이벤트를 emit
-- **Bot Framework** — Azure Bot + CloudAdapter로 Teams 모든 대화 타입 지원
-- **Proactive Messaging** — ConversationReference를 저장하여 MCP reply 도구에서 비동기 응답
-- **Permission Relay** — 도구 실행 승인을 텍스트 기반으로 Teams 대화에서 처리
-- **stdio transport** — Claude Code가 서브프로세스로 spawn, stdio로 통신
+- **Dual Transport** — stdio (채널) / HTTP (도구 서버) 선택 가능
+- **Graph API 도구** — device code flow 인증, Azure 앱 등록 불필요 (well-known client ID 사용)
+- **Bot Framework** — CloudAdapter + TeamsActivityHandler로 1:1/그룹/채널 지원 (stdio 모드)
+- **11개 MCP 도구** — 인증, 팀/채널 조회, 메시지 읽기/전송/검색, 사용자 조회
+- **Channel Protocol** — `claude/channel` + `claude/channel/permission` capability (stdio 모드)
 
 ---
 
@@ -84,22 +86,32 @@ teams-mcp-server/
 ├── vitest.config.ts
 ├── src/
 │   ├── index.ts                  # 엔트리포인트 + process 에러 핸들링
-│   ├── server.ts                 # MCP 서버 생성 + 핸들러 등록 + shutdown
-│   ├── config.ts                 # Zod 기반 환경변수 검증 (Azure 자격증명)
-│   ├── bot.ts                    # CloudAdapter + TeamsActivityHandler
-│   ├── sender.ts                 # Proactive messaging + chunking
+│   ├── server.ts                 # createTeamsServer() + runServer() (transport 분리)
+│   ├── config.ts                 # Zod 기반 환경변수 검증 + CLI 인자
+│   ├── http-server.ts            # 통합 HTTP 라우터 (stdio: Bun.serve, http: node:http)
+│   ├── bot.ts                    # CloudAdapter + TeamsActivityHandler (stdio 모드)
+│   ├── sender.ts                 # Proactive messaging + chunking (stdio 모드)
 │   ├── conversations.ts          # ConversationReference 영속화 (메모리 + JSON 파일)
 │   ├── permission.ts             # 텍스트 기반 permission relay
 │   ├── access.ts                 # 접근 제어 (pairing, allowlist, outbound gate, assertSendable)
-│   ├── types.ts                  # Bot Activity 타입 + Access 타입
+│   ├── types.ts                  # Access 타입 + ChannelMeta
+│   ├── graph/
+│   │   ├── auth.ts               # MSAL device code flow + 파일 기반 토큰 캐시
+│   │   └── client.ts             # GraphService (Teams/Messages/Search/Users)
 │   ├── tools/
-│   │   ├── index.ts              # 도구 레지스트리
-│   │   └── reply.ts              # reply 도구 정의 + 핸들러
+│   │   ├── index.ts              # 도구 레지스트리 (11개 도구)
+│   │   ├── reply.ts              # reply — Bot Framework proactive message
+│   │   ├── auth.ts               # auth_status, auth_login — Graph API 인증
+│   │   ├── teams.ts              # list_teams, list_channels — 팀/채널 조회
+│   │   ├── messages.ts           # get_messages, send_message, list_chats — 메시징
+│   │   └── search.ts             # search_messages, get_me, get_user — 검색/사용자
 │   └── utils/
 │       ├── errors.ts             # 커스텀 에러 클래스 + formatErrorResponse
 │       ├── chunk.ts              # 메시지 분할 알고리즘
-│       ├── markdown.ts           # Markdown↔HTML 양방향 변환 (floriscornel 패턴)
+│       ├── markdown.ts           # Markdown↔HTML 양방향 변환 (marked + turndown)
 │       └── validators.ts         # Zod 입력 검증 (validateInput)
+├── Dockerfile                     # Bun 기반 Docker 이미지
+├── docker-compose.yml             # 환경변수 + 볼륨 관리
 ├── manifest/                      # Teams App 매니페스트
 │   ├── manifest.json
 │   ├── color.png                 # 192x192 앱 아이콘
@@ -123,7 +135,8 @@ teams-mcp-server/
 ~/.claude/channels/teams/
 ├── .env                          # 환경변수 (APP_ID, APP_PASSWORD 등)
 ├── access.json                   # 접근 제어 설정
-├── conversations.json            # ConversationReference 저장소
+├── conversations.json            # ConversationReference 저장소 (stdio 모드)
+├── graph-token-cache.json        # Graph API 토큰 캐시 (MSAL)
 └── approved/                     # pairing 승인 파일
 ```
 
@@ -145,6 +158,8 @@ teams-mcp-server/
     "test:coverage": "vitest --coverage"
   },
   "dependencies": {
+    "@azure/msal-node": "^5.1.0",
+    "@microsoft/microsoft-graph-client": "^3.0.0",
     "@modelcontextprotocol/sdk": "^1.12.0",
     "botbuilder": "^4.23.0",
     "marked": "^15.0.0",
@@ -163,9 +178,11 @@ teams-mcp-server/
 
 - 런타임: **Bun**
 - 핵심 의존성:
-  - MCP SDK — MCP 프로토콜
-  - `botbuilder` — Bot Framework CloudAdapter + TeamsActivityHandler
-  - `marked` + `turndown` — Markdown↔HTML 양방향 변환 (floriscornel/teams-mcp 패턴)
+  - MCP SDK — MCP 프로토콜 + StreamableHTTPServerTransport (http 모드)
+  - `@azure/msal-node` — Device code flow 인증 (Graph API)
+  - `@microsoft/microsoft-graph-client` — Graph API 클라이언트
+  - `botbuilder` — Bot Framework CloudAdapter + TeamsActivityHandler (stdio 모드)
+  - `marked` + `turndown` — Markdown↔HTML 양방향 변환
   - Zod — 설정 검증, 입력 검증
 
 ---
@@ -934,45 +951,57 @@ ngrok http 3978
 
 ## 실행 방법
 
-### 초기 설정
+### Channel 모드 (stdio) — Azure Bot 필요
 
 ```bash
 # 1. 의존성 설치
 bun install
 
-# 2. 자격증명 설정 (Claude Code 내에서)
+# 2. Azure 자격증명 설정
 /teams:configure
 # 또는 수동으로 ~/.claude/channels/teams/.env 생성
 
 # 3. 접근 제어 설정
-/teams:access policy pairing    # pairing 모드 추천
+/teams:access policy pairing
 
 # 4. ngrok으로 HTTPS 노출 (개발 시)
 ngrok http 3978
-```
 
-### 세션 시작
-
-```bash
-# Claude Code 채널로 실행
+# 5. Claude Code 채널로 실행
 claude --dangerously-load-development-channels /path/to/teams-mcp-server
-
-# tmux로 백그라운드 실행
-tmux new-session -d -s claude \
-  "claude --dangerously-load-development-channels /path/to/teams-mcp-server"
 ```
 
-### 테스트
+### Tool Server 모드 (HTTP) — Azure 불필요
 
 ```bash
-# 1. 서버 기동 확인
-curl https://<ngrok-url>/health
+# 1. 의존성 설치
+bun install
 
-# 2. Teams에서 1:1 채팅 테스트
-# 봇을 추가하고 "hello" 메시지 전송
+# 2. 서버 시작 (Azure 자격증명 불필요)
+bun start:http
 
-# 3. 그룹 채팅 테스트
-# 그룹에 봇을 추가하고 "@Claude Bot hello" 멘션
+# 3. Claude Code에서 연결
+claude mcp add --transport http teams http://localhost:3978/mcp
+
+# 4. Graph API 로그인 (Claude에게 요청)
+# "auth_login으로 Teams에 로그인해줘"
+# → 브라우저에서 device code 입력
+
+# 5. 사용
+# "내 팀 목록 보여줘"
+# "General 채널의 최근 메시지 읽어줘"
+# "해당 채널에 '안녕하세요' 메시지 보내줘"
+```
+
+### Docker 배포
+
+```bash
+# docker-compose
+docker compose up -d
+claude mcp add --transport http teams http://localhost:3978/mcp
+
+# 또는 직접 실행
+docker run -p 3978:3978 -e MCP_TRANSPORT=http teams-mcp-server
 ```
 
 ---
@@ -1012,34 +1041,43 @@ curl https://<ngrok-url>/health
 
 ---
 
+## 구현 완료된 기능
+
+### Dual Transport (Issue #1 — Closed)
+
+하나의 프로젝트에서 두 가지 모드 지원:
+- **stdio**: Claude Code Channel 프로토콜 (Bot Framework + proactive messaging)
+- **http**: MCP StreamableHTTPServerTransport (Docker 배포, `/mcp` 엔드포인트)
+
+### Graph API 도구 (Issue #2 — Closed)
+
+Azure App Registration 없이 Graph API 사용 (well-known client ID `14d82eec-...`):
+
+| 도구 | 설명 | 카테고리 |
+|---|---|---|
+| `auth_status` | 인증 상태 확인 | 인증 |
+| `auth_login` | Device code flow 로그인 | 인증 |
+| `list_teams` | 가입한 팀 목록 | 팀/채널 |
+| `list_channels` | 팀의 채널 목록 | 팀/채널 |
+| `get_messages` | 채널/채팅 메시지 읽기 | 메시지 |
+| `send_message` | 메시지 전송 (사용자 이름으로) | 메시지 |
+| `list_chats` | 채팅 목록 | 메시지 |
+| `search_messages` | KQL 메시지 검색 | 검색 |
+| `get_me` | 내 프로필 | 사용자 |
+| `get_user` | 사용자 조회 | 사용자 |
+| `reply` | Bot Framework proactive message | 채널 (stdio) |
+
+---
+
 ## 향후 확장 고려사항
 
-### Dual API 전략 — Bot Framework (쓰기) + Graph API (읽기)
-
-InditexTech 패턴을 참조하여, Bot Framework와 Graph API를 각각 강점에 맞게 분리 사용:
-
-| API | 용도 | 장점 |
-|---|---|---|
-| **Bot Framework** | 메시지 수신, 발신, 멘션, 스레드 답장 | 실시간 수신, 복잡한 메시지 포맷 처리 |
-| **Graph API** | 메시지 히스토리 읽기, 검색, 사용자 조회 | 페이지네이션, OData 필터, 풍부한 읽기 API |
-
-Graph API 도구를 조건부로 활성화 (GitHub Issue #2):
-```typescript
-if (config.graphClientId) {
-  tools.push(fetchMessagesTool, searchMessagesTool);
-}
-```
-
-### 기타 확장
-
-- **메시지 편집**: `context.updateActivity()`로 이전 응답 수정
-- **리액션 수신**: `onReactionsAdded()`로 이모지 리액션 처리
-- **파일 첨부**: Bot Framework의 파일 업로드 지원
+- **메시지 편집**: `context.updateActivity()` (stdio) 또는 Graph API PATCH (http)
+- **리액션 수신**: `onReactionsAdded()` (stdio)
+- **파일 첨부**: Bot Framework 또는 Graph API Files.ReadWrite.All
 - **Adaptive Card 응답**: 구조화된 카드 형태로 Claude 응답 표시
-- **스레드 답장 도구**: `reply_to_thread` 도구로 특정 스레드에 답장 (InditexTech 패턴)
-- **HTTP Transport**: MCP streamable-http transport 추가로 Docker 배포 지원 (GitHub Issue #1)
+- **스레드 답장 도구**: `{conversationId};messageid={threadId}` (InditexTech 패턴)
 - **조건부 read-only 모드**: floriscornel 패턴의 `readOnly` 플래그로 write 도구 비활성화
-- **에러 Result 패턴**: m0nkmaster 패턴의 `Result<T, McpError>` (retryable + suggestions 포함)
+- **에러 Result 패턴**: m0nkmaster 패턴의 `Result<T, McpError>` (retryable + suggestions)
 
 ---
 
