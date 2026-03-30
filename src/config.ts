@@ -34,6 +34,16 @@ function loadEnvFile(): void {
   }
 }
 
+function getCliArg(name: string): string | undefined {
+  const prefix = `--${name}`;
+  const args = process.argv.slice(2);
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === prefix && i + 1 < args.length) return args[i + 1];
+    if (args[i]?.startsWith(`${prefix}=`)) return args[i]!.split("=")[1];
+  }
+  return undefined;
+}
+
 const configSchema = z.object({
   appId: z.string().min(1, "MICROSOFT_APP_ID is required"),
   appPassword: z.string().min(1, "MICROSOFT_APP_PASSWORD is required"),
@@ -42,6 +52,7 @@ const configSchema = z.object({
     .enum(["SingleTenant", "MultiTenant"])
     .default("SingleTenant"),
   port: z.number().int().min(1).max(65535).default(3978),
+  transport: z.enum(["stdio", "http"]).default("stdio"),
   stateDir: z.string().default(STATE_DIR_DEFAULT),
   logLevel: z.enum(["debug", "info", "warn", "error"]).default("info"),
 });
@@ -58,6 +69,7 @@ export function loadConfig(): Config {
       tenantId: process.env.MICROSOFT_APP_TENANT_ID,
       appType: process.env.MICROSOFT_APP_TYPE || "SingleTenant",
       port: Number(process.env.TEAMS_PORT) || 3978,
+      transport: getCliArg("transport") || process.env.MCP_TRANSPORT || "stdio",
       stateDir: process.env.TEAMS_STATE_DIR || STATE_DIR_DEFAULT,
       logLevel: process.env.LOG_LEVEL || "info",
     });

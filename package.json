@@ -5,10 +5,14 @@
   "main": "src/index.ts",
   "scripts": {
     "start": "bun run src/index.ts",
+    "start:http": "MCP_TRANSPORT=http bun run src/index.ts",
     "dev": "bun --watch src/index.ts",
     "test": "bun test",
     "test:vitest": "vitest",
-    "test:coverage": "vitest --coverage"
+    "test:coverage": "vitest --coverage",
+    "docker:build": "docker build -t teams-mcp-server .",
+    "docker:up": "docker compose up",
+    "docker:down": "docker compose down"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.0",
