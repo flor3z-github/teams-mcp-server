@@ -108,7 +108,20 @@ export async function runServer(config: Config): Promise<void> {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             type: "message",
-            text: `${name} has been approved and can now interact with Claude.`,
+            attachments: [{
+              contentType: "application/vnd.microsoft.card.adaptive",
+              contentUrl: null,
+              content: {
+                $schema: "http://adaptivecards.io/schemas/adaptive-card.json",
+                type: "AdaptiveCard",
+                version: "1.4",
+                body: [{
+                  type: "TextBlock",
+                  text: `${name} has been approved and can now interact with Claude.`,
+                  wrap: true,
+                }],
+              },
+            }],
           }),
         });
       } catch {

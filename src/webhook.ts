@@ -2,6 +2,34 @@ import type { Config } from "./config.js";
 import { loadAccess } from "./access.js";
 import { chunk, MAX_CHUNK_LIMIT } from "./utils/chunk.js";
 
+/**
+ * 텍스트를 Adaptive Card 포맷으로 변환.
+ * Power Automate Workflow webhook은 Adaptive Card를 공식 포맷으로 기대한다.
+ */
+function toAdaptiveCard(text: string): object {
+  return {
+    type: "message",
+    attachments: [
+      {
+        contentType: "application/vnd.microsoft.card.adaptive",
+        contentUrl: null,
+        content: {
+          $schema: "http://adaptivecards.io/schemas/adaptive-card.json",
+          type: "AdaptiveCard",
+          version: "1.4",
+          body: [
+            {
+              type: "TextBlock",
+              text,
+              wrap: true,
+            },
+          ],
+        },
+      },
+    ],
+  };
+}
+
 export async function sendToTeams(
   text: string,
   config: Config,
@@ -18,10 +46,7 @@ export async function sendToTeams(
     const response = await fetch(config.incomingWebhookUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        type: "message",
-        text: chunks[i],
-      }),
+      body: JSON.stringify(toAdaptiveCard(chunks[i])),
     });
 
     if (!response.ok) {

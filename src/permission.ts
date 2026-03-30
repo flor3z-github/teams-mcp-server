@@ -31,7 +31,21 @@ export function setupPermissionRelay(mcp: McpServer, config: Config): void {
         await fetch(config.incomingWebhookUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ type: "message", text }),
+          body: JSON.stringify({
+            type: "message",
+            attachments: [
+              {
+                contentType: "application/vnd.microsoft.card.adaptive",
+                contentUrl: null,
+                content: {
+                  $schema: "http://adaptivecards.io/schemas/adaptive-card.json",
+                  type: "AdaptiveCard",
+                  version: "1.4",
+                  body: [{ type: "TextBlock", text, wrap: true }],
+                },
+              },
+            ],
+          }),
         });
       } catch (err) {
         process.stderr.write(
