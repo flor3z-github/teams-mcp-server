@@ -125,7 +125,8 @@ teams-channel-plugin/
   "scripts": {
     "start": "bun run src/index.ts",
     "dev": "bun --watch src/index.ts",
-    "test": "vitest",
+    "test": "bun test",
+    "test:vitest": "vitest",
     "test:coverage": "vitest --coverage"
   },
   "dependencies": {
@@ -399,12 +400,22 @@ export async function runServer(config: Config): Promise<void> {
   const transport = new StdioServerTransport();
   await mcp.connect(transport);
 
+  // approved/ 폴링 — pairing 승인 감지 (5초 간격)
+  const approvedInterval = setInterval(async () => {
+    const ids = pollApproved(config);
+    for (const senderId of ids) {
+      // pending → allowFrom 이동 + 채널에 확인 메시지 전송
+      // ... (상세 구현은 src/server.ts 참조)
+    }
+  }, 5000);
+
   // Graceful shutdown
   let shuttingDown = false;
   function shutdown(): void {
     if (shuttingDown) return;
     shuttingDown = true;
     process.stderr.write("teams channel: shutting down\n");
+    clearInterval(approvedInterval);
     httpServer.stop();
     setTimeout(() => process.exit(0), 2000);
   }
@@ -490,16 +501,16 @@ export interface ChannelMeta {
 ### 5. HTTP 서버 — Outgoing Webhook 수신 (src/http.ts)
 
 ```typescript
-import { Server as McpServer } from "@modelcontextprotocol/sdk/server/index.js";
-import { Config } from "./config.js";
+import type { Server as McpServer } from "@modelcontextprotocol/sdk/server/index.js";
+import type { Config } from "./config.js";
 import { verifyHmac } from "./hmac.js";
-import { gate, isPermissionReply } from "./access.js";
-import { TeamsOutgoingWebhookPayload, ChannelMeta } from "./types.js";
+import { gate } from "./access.js";
+import type { TeamsOutgoingWebhookPayload, ChannelMeta } from "./types.js";
 
 const PERMISSION_REPLY_RE = /^\s*(y|yes|n|no)\s+([a-km-z]{5})\s*$/i;
 
 export function startHttpServer(mcp: McpServer, config: Config) {
-  return Bun.serve({
+  const server = Bun.serve({
     port: config.port,
     hostname: "0.0.0.0",
     async fetch(req) {
@@ -593,8 +604,8 @@ export function startHttpServer(mcp: McpServer, config: Config) {
       return new Response("Not Found", { status: 404 });
     },
   });
+  return { stop() { server.stop(); } };
 }
-```
 
 > **주의사항**: Teams Outgoing Webhook은 10초 내 응답을 요구한다.
 > Claude의 실제 응답은 비동기로 reply 도구를 통해 Incoming Webhook으로 전송하고,

@@ -21,7 +21,7 @@ Teams 채널에서 `@claude-bot`으로 멘션하면 Claude Code 세션으로 메
 ```bash
 git clone <repo-url>
 cd teams-mcp-server
-npm install
+bun install
 ```
 
 ### 2. Teams 설정
@@ -63,11 +63,11 @@ Teams에서 `@claude-bot hello` → 6자리 코드 발급 → Claude Code에서:
 ### 5. 실행
 
 ```bash
-# Node.js (tsx)
-npm start
+# 서버 시작
+bun start
 
-# Bun
-npm run start:bun
+# 개발 모드 (watch)
+bun dev
 
 # Claude Code 채널로 실행
 claude --dangerously-load-development-channels /path/to/teams-mcp-server
@@ -76,7 +76,7 @@ claude --dangerously-load-development-channels /path/to/teams-mcp-server
 ## Architecture
 
 ```
-Teams 채널 ←→ HTTP Server (node:http) ←→ MCP Server (stdio) ←→ Claude Code
+Teams 채널 ←→ HTTP Server (Bun.serve) ←→ MCP Server (stdio) ←→ Claude Code
 ```
 
 - **Outgoing Webhook** → HTTP POST → HMAC 검증 → gate → MCP notification
@@ -98,10 +98,10 @@ Teams 채널 ←→ HTTP Server (node:http) ←→ MCP Server (stdio) ←→ Cla
 ## Development
 
 ```bash
-npm install          # 의존성 설치
-npx tsc --noEmit     # 타입 체크
-npm test             # 테스트 실행 (vitest)
-npm run dev          # 개발 모드 (watch)
+bun install          # 의존성 설치
+bunx tsc --noEmit    # 타입 체크
+bun test:vitest      # 테스트 실행 (vitest)
+bun dev              # 개발 모드 (watch)
 ```
 
 ## Teams Platform Limitations

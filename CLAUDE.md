@@ -34,16 +34,16 @@ Teams 채널 ←→ HTTP Server (Bun.serve) ←→ MCP Server (stdio) ←→ Cla
 
 ```bash
 # 의존성 설치
-npm install     # 또는 bun install
+bun install
 
 # 타입 체크
-npx tsc --noEmit
+bunx tsc --noEmit
 
 # 테스트
-npm test
+bun test:vitest
 
-# 개발 실행 (bun 필요)
-bun run dev
+# 개발 실행 (watch 모드)
+bun dev
 ```
 
 ## State Directory

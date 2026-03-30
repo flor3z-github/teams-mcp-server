@@ -4,12 +4,10 @@
   "type": "module",
   "main": "src/index.ts",
   "scripts": {
-    "build": "tsc",
-    "start": "node --import tsx src/index.ts",
-    "start:bun": "bun run src/index.ts",
-    "dev": "node --import tsx --watch src/index.ts",
-    "dev:bun": "bun --watch src/index.ts",
-    "test": "vitest",
+    "start": "bun run src/index.ts",
+    "dev": "bun --watch src/index.ts",
+    "test": "bun test",
+    "test:vitest": "vitest",
     "test:coverage": "vitest --coverage"
   },
   "dependencies": {
@@ -17,8 +15,7 @@
     "zod": "^3.23.0"
   },
   "devDependencies": {
-    "@types/node": "^25.5.0",
-    "tsx": "^4.21.0",
+    "@types/bun": "^1.3.11",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"
   }
