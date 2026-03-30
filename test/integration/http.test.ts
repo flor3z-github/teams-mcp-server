@@ -1,6 +1,6 @@
-// 이 테스트는 Bun 런타임에서만 실행 가능합니다.
+// Bun 런타임 전용 통합 테스트
 // 실행: bun test test/integration/http.test.ts
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import { createHmac, randomBytes } from "node:crypto";
 import { mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -31,13 +31,14 @@ function createMockMcp() {
 // ─── Helpers ───
 
 const SECRET = randomBytes(32).toString("base64");
-const TEST_PORT = 19788;
+let portCounter = 19700;
 
 function makeConfig(stateDir: string): Config {
+  const port = portCounter++;
   return {
     webhookSecret: SECRET,
     incomingWebhookUrl: "https://example.com/webhook",
-    port: TEST_PORT,
+    port,
     stateDir,
     logLevel: "error",
   };
@@ -78,11 +79,12 @@ function makePayload(overrides: Record<string, unknown> = {}): string {
 }
 
 async function post(
+  port: number,
   path: string,
   body: string,
   headers: Record<string, string> = {},
 ): Promise<{ status: number; body: string }> {
-  const res = await fetch(`http://localhost:${TEST_PORT}${path}`, {
+  const res = await fetch(`http://localhost:${port}${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...headers },
     body,
@@ -90,8 +92,11 @@ async function post(
   return { status: res.status, body: await res.text() };
 }
 
-async function get(path: string): Promise<{ status: number; body: string }> {
-  const res = await fetch(`http://localhost:${TEST_PORT}${path}`);
+async function get(
+  port: number,
+  path: string,
+): Promise<{ status: number; body: string }> {
+  const res = await fetch(`http://localhost:${port}${path}`);
   return { status: res.status, body: await res.text() };
 }
 
@@ -112,7 +117,6 @@ describe("HTTP server integration", () => {
     config = makeConfig(stateDir);
     mockMcp = createMockMcp();
     server = startHttpServer(mockMcp as any, config);
-    // 서버가 listen할 시간을 줌
     await new Promise((r) => setTimeout(r, 100));
   });
 
@@ -122,7 +126,7 @@ describe("HTTP server integration", () => {
   });
 
   it("GET /health should return 200 with status ok", async () => {
-    const res = await get("/health");
+    const res = await get(config.port, "/health");
     expect(res.status).toBe(200);
     const data = JSON.parse(res.body);
     expect(data.status).toBe("ok");
@@ -131,13 +135,13 @@ describe("HTTP server integration", () => {
 
   it("POST /webhook without HMAC should return 401", async () => {
     const body = makePayload();
-    const res = await post("/webhook", body);
+    const res = await post(config.port, "/webhook", body);
     expect(res.status).toBe(401);
   });
 
   it("POST /webhook with wrong HMAC should return 401", async () => {
     const body = makePayload();
-    const res = await post("/webhook", body, {
+    const res = await post(config.port, "/webhook", body, {
       Authorization: "HMAC wrongsignature==",
     });
     expect(res.status).toBe(401);
@@ -154,7 +158,7 @@ describe("HTTP server integration", () => {
 
     const body = makePayload();
     const sig = hmacSign(body);
-    const res = await post("/webhook", body, {
+    const res = await post(config.port, "/webhook", body, {
       Authorization: `HMAC ${sig}`,
     });
 
@@ -162,7 +166,6 @@ describe("HTTP server integration", () => {
     const data = JSON.parse(res.body);
     expect(data.text).toBe("Processing...");
 
-    // MCP notification이 전달되었는지 확인
     expect(mockMcp.notifications).toHaveLength(1);
     const notif = mockMcp.notifications[0];
     expect(notif.method).toBe("notifications/claude/channel");
@@ -184,7 +187,7 @@ describe("HTTP server integration", () => {
 
     const body = makePayload();
     const sig = hmacSign(body);
-    const res = await post("/webhook", body, {
+    const res = await post(config.port, "/webhook", body, {
       Authorization: `HMAC ${sig}`,
     });
 
@@ -202,7 +205,7 @@ describe("HTTP server integration", () => {
 
     const body = makePayload();
     const sig = hmacSign(body);
-    const res = await post("/webhook", body, {
+    const res = await post(config.port, "/webhook", body, {
       Authorization: `HMAC ${sig}`,
     });
 
@@ -225,7 +228,7 @@ describe("HTTP server integration", () => {
       text: "<at>claude-bot</at> yes abcde",
     });
     const sig = hmacSign(body);
-    const res = await post("/webhook", body, {
+    const res = await post(config.port, "/webhook", body, {
       Authorization: `HMAC ${sig}`,
     });
 
@@ -254,7 +257,7 @@ describe("HTTP server integration", () => {
       text: "<at>claude-bot</at> no fghij",
     });
     const sig = hmacSign(body);
-    const res = await post("/webhook", body, {
+    const res = await post(config.port, "/webhook", body, {
       Authorization: `HMAC ${sig}`,
     });
 
@@ -267,7 +270,7 @@ describe("HTTP server integration", () => {
   });
 
   it("GET /unknown should return 404", async () => {
-    const res = await get("/nonexistent");
+    const res = await get(config.port, "/nonexistent");
     expect(res.status).toBe(404);
   });
 });
