@@ -1,0 +1,22 @@
+node_modules/
+dist/
+*.js
+*.d.ts
+*.js.map
+!vitest.config.ts
+
+# State files
+.env
+access.json
+approved/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Lock files (keep package-lock.json for npm)
+bun.lock
