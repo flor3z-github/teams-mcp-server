@@ -44,18 +44,33 @@ function getCliArg(name: string): string | undefined {
   return undefined;
 }
 
-const configSchema = z.object({
-  appId: z.string().min(1, "MICROSOFT_APP_ID is required"),
-  appPassword: z.string().min(1, "MICROSOFT_APP_PASSWORD is required"),
-  tenantId: z.string().min(1, "MICROSOFT_APP_TENANT_ID is required"),
-  appType: z
-    .enum(["SingleTenant", "MultiTenant"])
-    .default("SingleTenant"),
-  port: z.number().int().min(1).max(65535).default(3978),
-  transport: z.enum(["stdio", "http"]).default("stdio"),
-  stateDir: z.string().default(STATE_DIR_DEFAULT),
-  logLevel: z.enum(["debug", "info", "warn", "error"]).default("info"),
-});
+const configSchema = z
+  .object({
+    appId: z.string().default(""),
+    appPassword: z.string().default(""),
+    tenantId: z.string().default(""),
+    appType: z
+      .enum(["SingleTenant", "MultiTenant"])
+      .default("SingleTenant"),
+    port: z.number().int().min(1).max(65535).default(3978),
+    transport: z.enum(["stdio", "http"]).default("stdio"),
+    stateDir: z.string().default(STATE_DIR_DEFAULT),
+    logLevel: z.enum(["debug", "info", "warn", "error"]).default("info"),
+  })
+  .refine(
+    (c) => {
+      // stdio 모드에서는 Azure 자격증명 필수 (Bot Framework 사용)
+      if (c.transport === "stdio") {
+        return c.appId && c.appPassword && c.tenantId;
+      }
+      // http 모드에서는 Azure 자격증명 불필요
+      return true;
+    },
+    {
+      message:
+        "MICROSOFT_APP_ID, MICROSOFT_APP_PASSWORD, MICROSOFT_APP_TENANT_ID are required for stdio (channel) mode",
+    },
+  );
 
 export type Config = z.infer<typeof configSchema>;
 
