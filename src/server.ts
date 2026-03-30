@@ -11,6 +11,7 @@ import { createBotAdapter, createBotHandler } from "./bot.js";
 import { setAdapter } from "./sender.js";
 import { setupPermissionRelay } from "./permission.js";
 import { loadFromDisk } from "./conversations.js";
+import { initAuth } from "./graph/auth.js";
 import { pollApproved, loadAccess, saveAccess } from "./access.js";
 import { sendViaBot } from "./sender.js";
 import { startHttpServer } from "./http-server.js";
@@ -80,6 +81,7 @@ export async function createTeamsServer(config: Config): Promise<Server> {
 // 서버 실행 (transport 선택 + Bot + HTTP)
 export async function runServer(config: Config): Promise<void> {
   loadFromDisk(config);
+  initAuth(config.stateDir);
 
   const mcp = await createTeamsServer(config);
 
