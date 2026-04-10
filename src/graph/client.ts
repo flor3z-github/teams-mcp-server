@@ -82,7 +82,7 @@ export async function sendChannelMessage(
         content: markdownToHtml(text),
       },
     });
-  return { id: result.id, createdDateTime: result.createdDateTime };
+  return { id: result.id, createdDateTime: toKST(result.createdDateTime) };
 }
 
 export async function sendChatMessage(
@@ -96,7 +96,7 @@ export async function sendChatMessage(
       content: markdownToHtml(text),
     },
   });
-  return { id: result.id, createdDateTime: result.createdDateTime };
+  return { id: result.id, createdDateTime: toKST(result.createdDateTime) };
 }
 
 export async function listChats(top: number = 20): Promise<unknown> {
@@ -104,14 +104,19 @@ export async function listChats(top: number = 20): Promise<unknown> {
   const result = await client
     .api("/me/chats")
     .top(top)
-    .orderby("lastUpdatedDateTime desc")
+    .expand("members")
     .get();
-  return (result.value || []).map((c: any) => ({
-    id: c.id,
-    topic: c.topic || "(no topic)",
-    chatType: c.chatType,
-    lastUpdatedDateTime: c.lastUpdatedDateTime,
-  }));
+  return (result.value || [])
+    .sort((a: any, b: any) =>
+      new Date(b.lastUpdatedDateTime).getTime() - new Date(a.lastUpdatedDateTime).getTime(),
+    )
+    .map((c: any) => ({
+      id: c.id,
+      topic: c.topic || "(no topic)",
+      chatType: c.chatType,
+      members: (c.members || []).map((m: any) => m.displayName).filter(Boolean),
+      lastUpdatedDateTime: toKST(c.lastUpdatedDateTime),
+    }));
 }
 
 // ─── Search ───
@@ -138,7 +143,7 @@ export async function searchMessages(query: string): Promise<unknown> {
       body: hit.resource?.body?.content
         ? htmlToMarkdown(hit.resource.body.content)
         : "",
-      createdDateTime: hit.resource?.createdDateTime,
+      createdDateTime: toKST(hit.resource?.createdDateTime),
     },
   }));
 }
@@ -177,6 +182,12 @@ export async function getUser(userId: string): Promise<unknown> {
 
 // ─── Helpers ───
 
+function toKST(utc: string | undefined): string {
+  if (!utc) return "";
+  const d = new Date(utc);
+  return d.toLocaleString("ko-KR", { timeZone: "Asia/Seoul" });
+}
+
 function formatMessages(messages: any[]): unknown {
   return messages.map((m: any) => ({
     id: m.id,
@@ -184,7 +195,7 @@ function formatMessages(messages: any[]): unknown {
     body: m.body?.contentType === "html"
       ? htmlToMarkdown(m.body.content || "")
       : m.body?.content || "",
-    createdDateTime: m.createdDateTime,
+    createdDateTime: toKST(m.createdDateTime),
     messageType: m.messageType,
   }));
 }
