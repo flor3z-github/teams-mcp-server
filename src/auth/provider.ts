@@ -21,6 +21,7 @@ import {
   storeRefreshToken,
   getRefreshToken,
   deleteRefreshToken,
+  ACCESS_TOKEN_TTL_SECONDS,
 } from "./store.js";
 import {
   acquireTokenDeviceCode,
@@ -48,6 +49,26 @@ const authSessions = new Map<string, AuthSession>();
 
 function generateToken(): string {
   return randomBytes(32).toString("hex");
+}
+
+function issueTokenPair(
+  clientId: string,
+  msalAccountId: string,
+  scopes: string[],
+): OAuthTokens {
+  const accessToken = generateToken();
+  const refreshToken = generateToken();
+
+  storeAccessToken(accessToken, { clientId, msalAccountId, scopes });
+  storeRefreshToken(refreshToken, { clientId, msalAccountId, scopes });
+
+  return {
+    access_token: accessToken,
+    token_type: "Bearer",
+    expires_in: ACCESS_TOKEN_TTL_SECONDS,
+    refresh_token: refreshToken,
+    scope: scopes.join(" "),
+  };
 }
 
 // --- Device Code Flow management ---
@@ -93,17 +114,11 @@ export function pollDeviceFlow(
   const flow = deviceFlows.get(flowId);
   if (!flow) return null;
 
-  const result = {
+  return {
     deviceMessage: flow.deviceMessage,
     completed: flow.completed,
     error: flow.error,
   };
-
-  if (flow.completed || flow.error) {
-    // completed/error 상태에서는 아직 삭제하지 않음 (callback에서 사용)
-  }
-
-  return result;
 }
 
 export function getDeviceFlowAccountId(flowId: string): string | null {
@@ -117,13 +132,11 @@ export function getDeviceFlowAccountId(flowId: string): string | null {
 
 export class TeamsOAuthProvider implements OAuthServerProvider {
   private port: number;
+  private _clientsStore: OAuthRegisteredClientsStore;
 
   constructor(port: number) {
     this.port = port;
-  }
-
-  get clientsStore(): OAuthRegisteredClientsStore {
-    return {
+    this._clientsStore = {
       getClient: (clientId: string) => getClient(clientId),
       registerClient: (
         client: Omit<
@@ -132,6 +145,10 @@ export class TeamsOAuthProvider implements OAuthServerProvider {
         >,
       ) => registerClient(client),
     };
+  }
+
+  get clientsStore(): OAuthRegisteredClientsStore {
+    return this._clientsStore;
   }
 
   async authorize(
@@ -228,32 +245,11 @@ export class TeamsOAuthProvider implements OAuthServerProvider {
 
     deleteAuthCode(authorizationCode);
 
-    const accessToken = generateToken();
-    const refreshToken = generateToken();
-
-    storeAccessToken(accessToken, {
-      clientId: record.clientId,
-      msalAccountId: record.msalAccountId,
-      scopes: record.scopes,
-    });
-
-    storeRefreshToken(refreshToken, {
-      clientId: record.clientId,
-      msalAccountId: record.msalAccountId,
-      scopes: record.scopes,
-    });
-
     process.stderr.write(
       `teams mcp: tokens issued for account: ${record.msalAccountId}\n`,
     );
 
-    return {
-      access_token: accessToken,
-      token_type: "Bearer",
-      expires_in: 30 * 24 * 60 * 60,
-      refresh_token: refreshToken,
-      scope: record.scopes.join(" "),
-    };
+    return issueTokenPair(record.clientId, record.msalAccountId, record.scopes);
   }
 
   async exchangeRefreshToken(
@@ -267,32 +263,13 @@ export class TeamsOAuthProvider implements OAuthServerProvider {
       throw new Error("Invalid refresh token");
     }
 
-    const newAccessToken = generateToken();
-    storeAccessToken(newAccessToken, {
-      clientId: record.clientId,
-      msalAccountId: record.msalAccountId,
-      scopes: record.scopes,
-    });
-
-    const newRefreshToken = generateToken();
-    storeRefreshToken(newRefreshToken, {
-      clientId: record.clientId,
-      msalAccountId: record.msalAccountId,
-      scopes: record.scopes,
-    });
     deleteRefreshToken(refreshToken);
 
     process.stderr.write(
       `teams mcp: tokens refreshed for account: ${record.msalAccountId}\n`,
     );
 
-    return {
-      access_token: newAccessToken,
-      token_type: "Bearer",
-      expires_in: 30 * 24 * 60 * 60,
-      refresh_token: newRefreshToken,
-      scope: record.scopes.join(" "),
-    };
+    return issueTokenPair(record.clientId, record.msalAccountId, record.scopes);
   }
 
   async verifyAccessToken(token: string): Promise<AuthInfo> {

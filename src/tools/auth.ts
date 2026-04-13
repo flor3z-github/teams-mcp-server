@@ -34,7 +34,7 @@ export const authHandlers: Record<
   ) => Promise<{ content: { type: string; text: string }[] }>
 > = {
   auth_status: handleAuthStatus,
-  auth_login: handleAuthLogin,
+  auth_login: handleAuthStatus,
 };
 
 async function handleAuthStatus(
@@ -73,33 +73,6 @@ async function handleAuthStatus(
           `Authenticated as: ${account.name || account.username}\n` +
           `Account: ${account.username}\n` +
           `Tenant: ${account.tenantId}`,
-      },
-    ],
-  };
-}
-
-async function handleAuthLogin(
-  _input: unknown,
-  _config: Config,
-): Promise<{ content: { type: string; text: string }[] }> {
-  const session = sessionStore.getStore();
-  if (!session?.msalAccountId) {
-    return {
-      content: [
-        {
-          type: "text",
-          text: "Authentication is handled via OAuth flow when connecting. Reconnect to authenticate.",
-        },
-      ],
-    };
-  }
-
-  const account = await getAccountById(session.msalAccountId);
-  return {
-    content: [
-      {
-        type: "text",
-        text: `Already authenticated as: ${account?.name || account?.username || session.msalAccountId}`,
       },
     ],
   };

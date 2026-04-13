@@ -3,7 +3,6 @@ import {
   writeFileSync,
   mkdirSync,
   renameSync,
-  existsSync,
 } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -44,10 +43,12 @@ interface StoreData {
 
 const AUTH_CODE_TTL = 5 * 60 * 1000; // 5 minutes
 const ACCESS_TOKEN_TTL = 30 * 24 * 60 * 60 * 1000; // 30 days
+const ACCESS_TOKEN_TTL_SECONDS = ACCESS_TOKEN_TTL / 1000;
 
 // --- State ---
 
 let stateDir = "";
+let savePending = false;
 
 let store: StoreData = {
   clients: {},
@@ -67,16 +68,16 @@ export function initStore(dir: string): void {
   mkdirSync(stateDir, { recursive: true, mode: 0o700 });
 
   const file = getStoreFile();
-  if (existsSync(file)) {
-    try {
-      store = JSON.parse(readFileSync(file, "utf8"));
-      process.stderr.write(
-        `teams mcp: oauth store loaded (${Object.keys(store.accessTokens).length} tokens)\n`,
-      );
-    } catch {
+  try {
+    store = JSON.parse(readFileSync(file, "utf8"));
+    process.stderr.write(
+      `teams mcp: oauth store loaded (${Object.keys(store.accessTokens).length} tokens)\n`,
+    );
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
       process.stderr.write("teams mcp: oauth store corrupt, starting fresh\n");
-      store = { clients: {}, authCodes: {}, accessTokens: {}, refreshTokens: {} };
     }
+    store = { clients: {}, authCodes: {}, accessTokens: {}, refreshTokens: {} };
   }
 }
 
@@ -85,6 +86,41 @@ function saveStore(): void {
   const tmp = file + ".tmp";
   writeFileSync(tmp, JSON.stringify(store, null, 2) + "\n", { mode: 0o600 });
   renameSync(tmp, file);
+}
+
+/**
+ * 변경을 마이크로태스크에서 한 번에 flush한다.
+ * 같은 tick에서 여러 mutation이 발생해도 디스크 쓰기는 한 번만 수행한다.
+ */
+function scheduleSave(): void {
+  if (savePending) return;
+  savePending = true;
+  queueMicrotask(() => {
+    savePending = false;
+    saveStore();
+  });
+}
+
+/**
+ * 만료된 auth code와 access token을 정리한다.
+ */
+export function sweepExpired(): number {
+  const now = Date.now();
+  let swept = 0;
+  for (const [code, record] of Object.entries(store.authCodes)) {
+    if (now > record.expiresAt) {
+      delete store.authCodes[code];
+      swept++;
+    }
+  }
+  for (const [token, record] of Object.entries(store.accessTokens)) {
+    if (now > record.expiresAt) {
+      delete store.accessTokens[token];
+      swept++;
+    }
+  }
+  if (swept > 0) scheduleSave();
+  return swept;
 }
 
 // --- Clients ---
@@ -108,7 +144,7 @@ export function registerClient(
     client_id_issued_at: Math.floor(Date.now() / 1000),
   };
   store.clients[clientId] = full;
-  saveStore();
+  scheduleSave();
   process.stderr.write(`teams mcp: client registered: ${clientId}\n`);
   return full;
 }
@@ -123,7 +159,7 @@ export function storeAuthCode(
     ...record,
     expiresAt: Date.now() + AUTH_CODE_TTL,
   };
-  saveStore();
+  scheduleSave();
 }
 
 export function getAuthCode(code: string): AuthCodeRecord | undefined {
@@ -131,7 +167,7 @@ export function getAuthCode(code: string): AuthCodeRecord | undefined {
   if (!record) return undefined;
   if (Date.now() > record.expiresAt) {
     delete store.authCodes[code];
-    saveStore();
+    scheduleSave();
     return undefined;
   }
   return record;
@@ -139,7 +175,7 @@ export function getAuthCode(code: string): AuthCodeRecord | undefined {
 
 export function deleteAuthCode(code: string): void {
   delete store.authCodes[code];
-  saveStore();
+  scheduleSave();
 }
 
 // --- Access Tokens ---
@@ -152,7 +188,7 @@ export function storeAccessToken(
     ...record,
     expiresAt: Date.now() + ACCESS_TOKEN_TTL,
   };
-  saveStore();
+  scheduleSave();
 }
 
 export function getAccessToken(
@@ -162,7 +198,7 @@ export function getAccessToken(
   if (!record) return undefined;
   if (Date.now() > record.expiresAt) {
     delete store.accessTokens[token];
-    saveStore();
+    scheduleSave();
     return undefined;
   }
   return record;
@@ -170,7 +206,7 @@ export function getAccessToken(
 
 export function deleteAccessToken(token: string): void {
   delete store.accessTokens[token];
-  saveStore();
+  scheduleSave();
 }
 
 // --- Refresh Tokens ---
@@ -180,7 +216,7 @@ export function storeRefreshToken(
   record: RefreshTokenRecord,
 ): void {
   store.refreshTokens[token] = record;
-  saveStore();
+  scheduleSave();
 }
 
 export function getRefreshToken(
@@ -191,10 +227,10 @@ export function getRefreshToken(
 
 export function deleteRefreshToken(token: string): void {
   delete store.refreshTokens[token];
-  saveStore();
+  scheduleSave();
 }
 
-export { AUTH_CODE_TTL, ACCESS_TOKEN_TTL };
+export { AUTH_CODE_TTL, ACCESS_TOKEN_TTL, ACCESS_TOKEN_TTL_SECONDS };
 export type {
   AuthCodeRecord,
   AccessTokenRecord,

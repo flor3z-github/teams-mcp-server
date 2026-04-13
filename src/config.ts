@@ -34,16 +34,6 @@ function loadEnvFile(): void {
   }
 }
 
-function getCliArg(name: string): string | undefined {
-  const prefix = `--${name}`;
-  const args = process.argv.slice(2);
-  for (let i = 0; i < args.length; i++) {
-    if (args[i] === prefix && i + 1 < args.length) return args[i + 1];
-    if (args[i]?.startsWith(`${prefix}=`)) return args[i]!.split("=")[1];
-  }
-  return undefined;
-}
-
 const configSchema = z.object({
   port: z.number().int().min(1).max(65535).default(3978),
   stateDir: z.string().default(STATE_DIR_DEFAULT),

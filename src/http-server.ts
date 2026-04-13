@@ -79,16 +79,17 @@ export function startHttpServer(config: Config): HttpServerHandle {
 
   const transports = new Map<string, StreamableHTTPServerTransport>();
   const sessionCredentialsMap = new Map<string, SessionCredentials>();
+  const transportSessionIds = new Map<StreamableHTTPServerTransport, string>();
+
+  function extractCredentials(req: express.Request): SessionCredentials {
+    const extra = req.auth?.extra as Record<string, unknown> | undefined;
+    return { msalAccountId: (extra?.msalAccountId as string) ?? "" };
+  }
 
   // POST /mcp
   app.post("/mcp", bearerAuth, async (req, res) => {
     const sessionId = req.headers["mcp-session-id"] as string | undefined;
-
-    const credentials: SessionCredentials = {
-      msalAccountId: (
-        req.auth?.extra as Record<string, unknown> | undefined
-      )?.msalAccountId as string,
-    };
+    const credentials = extractCredentials(req);
 
     try {
       if (sessionId && transports.has(sessionId)) {
@@ -106,14 +107,16 @@ export function startHttpServer(config: Config): HttpServerHandle {
             process.stderr.write(`teams mcp: session created: ${sid}\n`);
             transports.set(sid, transport);
             sessionCredentialsMap.set(sid, credentials);
+            transportSessionIds.set(transport, sid);
           },
         });
 
         transport.onclose = () => {
-          const sid = (transport as any).sessionId as string;
+          const sid = transportSessionIds.get(transport);
           if (sid) {
             transports.delete(sid);
             sessionCredentialsMap.delete(sid);
+            transportSessionIds.delete(transport);
             process.stderr.write(`teams mcp: session closed: ${sid}\n`);
           }
         };
@@ -152,9 +155,12 @@ export function startHttpServer(config: Config): HttpServerHandle {
       return;
     }
     const transport = transports.get(sessionId)!;
-    const credentials = sessionCredentialsMap.get(sessionId) ?? {
-      msalAccountId: "",
-    };
+    const credentials = sessionCredentialsMap.get(sessionId);
+    if (!credentials) {
+      process.stderr.write(`teams mcp: no credentials for session: ${sessionId}\n`);
+      res.status(401).send("Session credentials not found");
+      return;
+    }
     await sessionStore.run(credentials, async () => {
       await transport.handleRequest(req, res);
     });

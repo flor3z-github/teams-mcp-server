@@ -5,7 +5,7 @@ import {
   type SilentFlowRequest,
   type AccountInfo,
 } from "@azure/msal-node";
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, renameSync } from "node:fs";
 import { join } from "node:path";
 import { sessionStore } from "../context.js";
 
@@ -35,20 +35,23 @@ function getCachePath(): string {
 
 export function initAuth(stateDir: string): void {
   cacheDir = stateDir;
+  mkdirSync(cacheDir, { recursive: true, mode: 0o700 });
 
-  const beforeCacheAccess = async (cacheContext: any) => {
-    const cachePath = getCachePath();
-    if (existsSync(cachePath)) {
-      cacheContext.tokenCache.deserialize(readFileSync(cachePath, "utf8"));
+  const beforeCacheAccess = async (cacheContext: { tokenCache: { deserialize: (data: string) => void } }) => {
+    try {
+      const data = readFileSync(getCachePath(), "utf8");
+      cacheContext.tokenCache.deserialize(data);
+    } catch {
+      // ENOENT or corrupt — start with empty cache
     }
   };
 
-  const afterCacheAccess = async (cacheContext: any) => {
+  const afterCacheAccess = async (cacheContext: { cacheHasChanged: boolean; tokenCache: { serialize: () => string } }) => {
     if (cacheContext.cacheHasChanged) {
-      mkdirSync(cacheDir, { recursive: true, mode: 0o700 });
-      writeFileSync(getCachePath(), cacheContext.tokenCache.serialize(), {
-        mode: 0o600,
-      });
+      const cachePath = getCachePath();
+      const tmp = cachePath + ".tmp";
+      writeFileSync(tmp, cacheContext.tokenCache.serialize(), { mode: 0o600 });
+      renameSync(tmp, cachePath);
     }
   };
 
