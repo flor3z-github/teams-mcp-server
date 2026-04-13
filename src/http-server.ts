@@ -19,7 +19,9 @@ export interface HttpServerHandle {
 
 export function startHttpServer(config: Config): HttpServerHandle {
   const provider = new TeamsOAuthProvider(config.port);
-  const issuerUrl = new URL(`http://localhost:${config.port}`);
+  const issuerUrl = config.baseUrl
+    ? new URL(config.baseUrl)
+    : new URL(`http://localhost:${config.port}`);
 
   const app = express();
 

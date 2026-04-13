@@ -36,6 +36,7 @@ function loadEnvFile(): void {
 
 const configSchema = z.object({
   port: z.number().int().min(1).max(65535).default(3978),
+  baseUrl: z.string().url().optional(),
   stateDir: z.string().default(STATE_DIR_DEFAULT),
   logLevel: z.enum(["debug", "info", "warn", "error"]).default("info"),
 });
@@ -48,6 +49,7 @@ export function loadConfig(): Config {
   try {
     return configSchema.parse({
       port: Number(process.env.TEAMS_PORT) || 3978,
+      baseUrl: process.env.TEAMS_BASE_URL || undefined,
       stateDir: process.env.TEAMS_STATE_DIR || STATE_DIR_DEFAULT,
       logLevel: process.env.LOG_LEVEL || "info",
     });
