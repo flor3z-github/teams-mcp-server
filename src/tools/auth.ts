@@ -1,17 +1,14 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import type { Config } from "../config.js";
-import {
-  getAccount,
-  acquireTokenDeviceCode,
-  acquireTokenSilent,
-} from "../graph/auth.js";
+import { getAccountById } from "../graph/auth.js";
+import { sessionStore } from "../context.js";
 
 export const authTools: Tool[] = [
   {
     name: "auth_status",
     description:
       "Check current Microsoft Graph API authentication status. " +
-      "Shows whether you are signed in and with which account.",
+      "Shows which Microsoft account is associated with this session.",
     inputSchema: {
       type: "object" as const,
       properties: {},
@@ -20,9 +17,8 @@ export const authTools: Tool[] = [
   {
     name: "auth_login",
     description:
-      "Sign in to Microsoft Graph API using device code flow. " +
-      "No Azure app registration needed. " +
-      "Returns a URL and code — open the URL in a browser and enter the code to authenticate.",
+      "Authentication is handled via OAuth flow when connecting to this server. " +
+      "This tool shows current authentication status.",
     inputSchema: {
       type: "object" as const,
       properties: {},
@@ -32,7 +28,10 @@ export const authTools: Tool[] = [
 
 export const authHandlers: Record<
   string,
-  (input: unknown, config: Config) => Promise<{ content: { type: string; text: string }[] }>
+  (
+    input: unknown,
+    config: Config,
+  ) => Promise<{ content: { type: string; text: string }[] }>
 > = {
   auth_status: handleAuthStatus,
   auth_login: handleAuthLogin,
@@ -42,18 +41,25 @@ async function handleAuthStatus(
   _input: unknown,
   _config: Config,
 ): Promise<{ content: { type: string; text: string }[] }> {
-  const account = await getAccount();
-  const token = await acquireTokenSilent();
-
-  if (account && token) {
+  const session = sessionStore.getStore();
+  if (!session?.msalAccountId) {
     return {
       content: [
         {
           type: "text",
-          text:
-            `Authenticated as: ${account.name || account.username}\n` +
-            `Account: ${account.username}\n` +
-            `Tenant: ${account.tenantId}`,
+          text: "Not authenticated. Reconnect to the server to trigger OAuth flow.",
+        },
+      ],
+    };
+  }
+
+  const account = await getAccountById(session.msalAccountId);
+  if (!account) {
+    return {
+      content: [
+        {
+          type: "text",
+          text: `Session has account ID ${session.msalAccountId} but account not found in MSAL cache. Re-authentication may be required.`,
         },
       ],
     };
@@ -63,7 +69,10 @@ async function handleAuthStatus(
     content: [
       {
         type: "text",
-        text: "Not authenticated. Use auth_login to sign in.",
+        text:
+          `Authenticated as: ${account.name || account.username}\n` +
+          `Account: ${account.username}\n` +
+          `Tenant: ${account.tenantId}`,
       },
     ],
   };
@@ -73,37 +82,25 @@ async function handleAuthLogin(
   _input: unknown,
   _config: Config,
 ): Promise<{ content: { type: string; text: string }[] }> {
-  let deviceCodeMessage = "";
-
-  try {
-    await acquireTokenDeviceCode((message) => {
-      deviceCodeMessage = message;
-    });
-
-    const account = await getAccount();
+  const session = sessionStore.getStore();
+  if (!session?.msalAccountId) {
     return {
       content: [
         {
           type: "text",
-          text:
-            `Successfully authenticated as: ${account?.name || account?.username}\n\n` +
-            `You can now use Teams tools (list_teams, get_messages, send_message, etc.)`,
+          text: "Authentication is handled via OAuth flow when connecting. Reconnect to authenticate.",
         },
       ],
     };
-  } catch (err) {
-    if (deviceCodeMessage) {
-      return {
-        content: [
-          {
-            type: "text",
-            text:
-              `${deviceCodeMessage}\n\n` +
-              `After signing in, call auth_login again to complete authentication.`,
-          },
-        ],
-      };
-    }
-    throw err;
   }
+
+  const account = await getAccountById(session.msalAccountId);
+  return {
+    content: [
+      {
+        type: "text",
+        text: `Already authenticated as: ${account?.name || account?.username || session.msalAccountId}`,
+      },
+    ],
+  };
 }

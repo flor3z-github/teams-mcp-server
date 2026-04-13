@@ -1,24 +1,20 @@
 {
   "name": "claude-code-teams-chat",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "main": "src/index.ts",
   "scripts": {
     "start": "bun run src/index.ts",
-    "start:http": "MCP_TRANSPORT=http bun run src/index.ts",
     "dev": "bun --watch src/index.ts",
     "test": "bun test",
     "test:vitest": "vitest",
-    "test:coverage": "vitest --coverage",
-    "docker:build": "docker build -t teams-mcp-server .",
-    "docker:up": "docker compose up",
-    "docker:down": "docker compose down"
+    "test:coverage": "vitest --coverage"
   },
   "dependencies": {
     "@azure/msal-node": "^5.1.1",
     "@microsoft/microsoft-graph-client": "^3.0.7",
     "@modelcontextprotocol/sdk": "^1.12.0",
-    "botbuilder": "^4.23.0",
+    "express": "^5.1.0",
     "marked": "^15.0.0",
     "turndown": "^7.2.0",
     "turndown-plugin-gfm": "^1.0.2",
@@ -26,6 +22,7 @@
   },
   "devDependencies": {
     "@types/bun": "latest",
+    "@types/express": "^5.0.0",
     "@types/turndown": "^5.0.5",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"

@@ -2,54 +2,57 @@
 
 ## Architecture
 
-Teams MCP Server는 두 가지 모드를 지원하는 MCP 서버이다.
+Teams MCP Server는 HTTP 전용 MCP 서버이다. 멀티유저 인증을 지원한다.
 
 ```
-stdio 모드:  Claude Code ──stdio──> MCP Server + Bun.serve(:3978) → /api/messages
-http 모드:   Claude Code ──HTTP──> MCP Server via node:http(:3978) → /mcp + /health
+Claude Code A ── Bearer Token A ──┐
+Claude Code B ── Bearer Token B ──┤──► Express + requireBearerAuth
+Claude Code C ── Bearer Token C ──┘         │
+                                            ▼ req.auth.extra.msalAccountId
+                                   AsyncLocalStorage<SessionCredentials>
+                                            │
+                                   getToken() → 세션별 Graph 토큰 획득
 ```
 
 ### 모듈 구조
 
 - `src/index.ts` — 엔트리포인트, 글로벌 에러 핸들러
-- `src/server.ts` — `createTeamsServer()` + `runServer()` (transport 분리)
-- `src/config.ts` — Zod 기반 환경변수 검증 + CLI 인자
-- `src/bot.ts` — CloudAdapter + TeamsActivityHandler
-- `src/sender.ts` — Proactive messaging + chunking
-- `src/conversations.ts` — ConversationReference 메모리+파일 영속화
-- `src/http-server.ts` — 통합 HTTP 라우터 (stdio: Bun.serve, http: node:http)
-- `src/permission.ts` — 텍스트 기반 permission relay
-- `src/access.ts` — 접근 제어 (gate, pairing, outbound gate, assertSendable)
-- `src/types.ts` — Access, ChannelMeta 타입
-- `src/tools/` — MCP 도구 (reply)
-- `src/utils/` — 에러, 검증, chunking, Markdown↔HTML
+- `src/server.ts` — `runServer()` (initAuth + initStore + HTTP 서버)
+- `src/config.ts` — Zod 기반 환경변수 검증
+- `src/context.ts` — AsyncLocalStorage 기반 세션 credential 저장소
+- `src/auth/store.ts` — 파일 기반 OAuth 토큰 저장소 (oauth-store.json)
+- `src/auth/provider.ts` — OAuthServerProvider 구현 (device code flow 통합)
+- `src/graph/auth.ts` — MSAL 초기화, 다중 사용자 토큰 관리
+- `src/graph/client.ts` — Microsoft Graph API 클라이언트
+- `src/http-server.ts` — Express HTTP 서버 (mcpAuthRouter + requireBearerAuth)
+- `src/mcp-server.ts` — MCP Server 인스턴스 생성, 도구 등록
+- `src/tools/` — MCP 도구 (auth, teams, messages, search)
+- `src/utils/` — 에러, 검증, Markdown↔HTML
 
-### 데이터 흐름 (stdio 모드)
+### 인증 흐름
 
-1. Teams 사용자가 봇에게 메시지 → Bot Framework POST `/api/messages`
-2. CloudAdapter JWT 검증 → TeamsActivityHandler.onMessage()
-3. @멘션 제거 → HTML→Markdown → gate → permission 인터셉트
-4. `notifications/claude/channel` → Claude Code 세션
-5. Claude가 `reply` 도구 호출 → outbound gate → assertSendable → Markdown→HTML
-6. `adapter.continueConversationAsync()` → Teams 대화
+1. Claude Code가 HTTP MCP 서버에 접속
+2. MCP SDK OAuth discovery → `/authorize` 엔드포인트
+3. Device code flow HTML 페이지 서빙 → 사용자가 MS 계정으로 로그인
+4. MSAL device code flow 완료 → `msalAccountId` 추출
+5. Auth code 발급 → access/refresh 토큰 교환 (msalAccountId 바인딩)
+6. 이후 요청: Bearer 토큰 → `msalAccountId` 추출 → `AsyncLocalStorage`에 주입
+7. `getToken()` → 해당 계정의 Graph 토큰 silent 획득
 
 ## Development
 
 ```bash
 bun install           # 의존성 설치
-bun dev               # stdio 모드 (watch)
-bun start:http        # http 모드
-bunx vitest run       # 단위 테스트 (43개)
-docker compose up     # Docker 테스트
+bun run start         # HTTP 서버 시작
+bun dev               # watch 모드
+bunx vitest run       # 단위 테스트
 ```
 
 ## State Directory
 
 `~/.claude/channels/teams/`:
-- `.env` — Azure 자격증명 (0o600)
-- `access.json` — 접근 제어 (0o600, atomic write)
-- `conversations.json` — ConversationReference 영속화
-- `approved/` — pairing 승인 파일
+- `graph-token-cache.json` — MSAL 토큰 캐시 (다중 계정, 0o600)
+- `oauth-store.json` — OAuth 클라이언트/토큰 저장소 (0o600, atomic write)
 
 ## Conventions
 
@@ -58,4 +61,6 @@ docker compose up     # Docker 테스트
 - Zod로 입력 검증 (`validateInput`)
 - 커스텀 에러 클래스 + `formatErrorResponse`
 - 파일 I/O: atomic write (tmp + rename), 0o600/0o700 권한
-- stdio 모드: Bun.serve, http 모드: node:http (StreamableHTTPServerTransport 호환)
+- 로깅: `process.stderr.write()`, 접두사 `teams mcp:`, 이모지 사용 금지
+- Express + MCP SDK auth (mcpAuthRouter, requireBearerAuth)
+- AsyncLocalStorage로 요청별 credential 전파

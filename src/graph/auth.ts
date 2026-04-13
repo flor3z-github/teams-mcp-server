@@ -7,6 +7,7 @@ import {
 } from "@azure/msal-node";
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
+import { sessionStore } from "../context.js";
 
 // Microsoft Graph CLI — 모든 Azure AD 테넌트에 기본 등록된 first-party app
 const CLIENT_ID = "14d82eec-204b-4c2f-b7e8-296a70dab67e";
@@ -26,7 +27,6 @@ const SCOPES = [
 ];
 
 let msalApp: PublicClientApplication | null = null;
-let cachedToken: AuthenticationResult | null = null;
 let cacheDir: string = "";
 
 function getCachePath(): string {
@@ -64,37 +64,55 @@ export function initAuth(stateDir: string): void {
       },
     },
   });
+
+  process.stderr.write("teams mcp: MSAL initialized\n");
 }
 
-export async function getAccount(): Promise<AccountInfo | null> {
+/**
+ * homeAccountId로 특정 계정을 조회한다.
+ */
+export async function getAccountById(
+  homeAccountId: string,
+): Promise<AccountInfo | null> {
   if (!msalApp) return null;
   const cache = msalApp.getTokenCache();
   const accounts = await cache.getAllAccounts();
-  return accounts.length > 0 ? accounts[0] : null;
+  return accounts.find((a) => a.homeAccountId === homeAccountId) ?? null;
 }
 
-export async function acquireTokenSilent(): Promise<string | null> {
-  if (!msalApp) return null;
-
-  const account = await getAccount();
-  if (!account) return null;
-
-  try {
-    const request: SilentFlowRequest = {
-      account,
-      scopes: SCOPES,
-    };
-    const result = await msalApp.acquireTokenSilent(request);
-    cachedToken = result;
-    return result.accessToken;
-  } catch {
-    return null;
+/**
+ * 특정 계정의 Graph 토큰을 silent로 획득한다.
+ */
+export async function acquireTokenSilentForAccount(
+  homeAccountId: string,
+): Promise<string> {
+  if (!msalApp) {
+    throw new Error("Auth not initialized. Call initAuth() first.");
   }
+
+  const account = await getAccountById(homeAccountId);
+  if (!account) {
+    throw new Error(
+      `Account not found in MSAL cache: ${homeAccountId}. Re-authentication required.`,
+    );
+  }
+
+  const request: SilentFlowRequest = {
+    account,
+    scopes: SCOPES,
+  };
+
+  const result = await msalApp.acquireTokenSilent(request);
+  return result.accessToken;
 }
 
+/**
+ * Device code flow를 수행한다.
+ * 완료 시 AuthenticationResult를 반환한다 (homeAccountId 추출용).
+ */
 export async function acquireTokenDeviceCode(
   onDeviceCode: (message: string) => void,
-): Promise<string> {
+): Promise<AuthenticationResult> {
   if (!msalApp) {
     throw new Error("Auth not initialized. Call initAuth() first.");
   }
@@ -110,18 +128,19 @@ export async function acquireTokenDeviceCode(
   if (!result) {
     throw new Error("Device code authentication failed.");
   }
-  cachedToken = result;
-  return result.accessToken;
+  return result;
 }
 
+/**
+ * 현재 세션의 Graph 토큰을 획득한다.
+ * sessionStore에서 msalAccountId를 읽어 해당 계정의 토큰을 반환한다.
+ */
 export async function getToken(): Promise<string> {
-  const silent = await acquireTokenSilent();
-  if (silent) return silent;
-  throw new Error(
-    "Not authenticated. Use the auth_login tool to sign in with your Microsoft account.",
-  );
-}
-
-export function isAuthenticated(): boolean {
-  return cachedToken !== null;
+  const session = sessionStore.getStore();
+  if (!session?.msalAccountId) {
+    throw new Error(
+      "Not authenticated. No session credentials found.",
+    );
+  }
+  return acquireTokenSilentForAccount(session.msalAccountId);
 }
