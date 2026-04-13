@@ -1,9 +1,8 @@
-# Teams MCP Server for Claude Code
+# Teams MCP Server
 
-Microsoft Teams Bot Framework 기반 MCP 서버. 두 가지 모드를 지원합니다:
+Microsoft Graph API 기반 MCP 서버. HTTP transport로 동작하며, 멀티유저 인증을 지원합니다.
 
-- **Channel (stdio)** — Claude Code가 spawn하여 Teams 채팅을 채널로 사용
-- **Tool Server (HTTP)** — Docker 배포 가능, 일반 MCP 도구 서버로 사용
+각 클라이언트가 자신의 Microsoft 계정으로 독립 인증하여 Teams 데이터에 접근합니다.
 
 ## Quick Start
 
@@ -15,79 +14,54 @@ cd teams-mcp-server
 bun install
 ```
 
-### 2. Azure 자격증명 설정
-
-[Azure Portal](https://portal.azure.com)에서 App Registration + Azure Bot 생성 후:
+### 2. 실행
 
 ```bash
-mkdir -p ~/.claude/channels/teams
-cat > ~/.claude/channels/teams/.env << 'EOF'
-MICROSOFT_APP_ID=<your-app-id>
-MICROSOFT_APP_PASSWORD=<your-client-secret>
-MICROSOFT_APP_TENANT_ID=<your-tenant-id>
-MICROSOFT_APP_TYPE=SingleTenant
-TEAMS_PORT=3978
-EOF
-chmod 600 ~/.claude/channels/teams/.env
+bun run start
 ```
 
-또는 Claude Code 내에서 `/teams:configure` 실행.
+### 3. Claude Code에서 연결
 
-### 3. 실행
-
-**Channel 모드** (Claude Code 채널로 Teams 채팅 사용):
-```bash
-claude --dangerously-load-development-channels /path/to/teams-mcp-server
-```
-
-**Tool Server 모드** (HTTP, Docker 배포 가능, Azure 불필요):
-```bash
-bun start:http
-# 또는
-docker compose up
-```
-
-연결:
 ```bash
 claude mcp add --transport http teams http://localhost:3978/mcp
 ```
 
-자세한 설정 방법은 [USAGE.md](USAGE.md)를 참조하세요.
+브라우저가 열리면 Microsoft 계정으로 로그인합니다. Azure App Registration 불필요.
 
 ## Features
 
-- **Bot Framework** — CloudAdapter + TeamsActivityHandler, JWT 자동 인증
-- **1:1 채팅 + 그룹 채팅 + 채널** 지원
-- **Dual Transport** — stdio (채널) / HTTP (도구 서버)
-- **Claude Code Channel Protocol** — `claude/channel` + `claude/channel/permission`
-- **Access Control** — pairing flow, allowlist, outbound gate
-- **Permission Relay** — 텍스트 기반 도구 실행 승인
+- **멀티유저 인증** — 클라이언트별 독립된 MSAL device code flow
+- **OAuth 2.0 + PKCE** — MCP SDK 기반 인증 (mcpAuthRouter + requireBearerAuth)
+- **Microsoft Graph API** — Teams, 채팅, 메시지, 사용자 검색
 - **Markdown↔HTML** — marked + turndown 양방향 변환
-- **Message Chunking** — 스마트 분할
 - **Docker 지원** — Dockerfile + docker-compose.yml
 
 ## MCP Tools
 
 | Tool | Description |
 |---|---|
-| `reply` | Teams 대화에 메시지 전송 (markdown → HTML, 자동 chunking) |
-
-## Skills (Channel 모드)
-
-| Skill | Description |
-|---|---|
-| `/teams:configure` | Azure 자격증명 설정, 현재 상태 확인 |
-| `/teams:access` | 접근 제어 관리 (pair, allow, remove, policy) |
+| `auth_status` | 현재 세션의 인증 상태 확인 |
+| `auth_login` | 인증 상태 확인 (OAuth flow로 이미 인증됨) |
+| `list_teams` | 참여 중인 Teams 목록 |
+| `list_channels` | 팀의 채널 목록 |
+| `get_messages` | 채널 또는 채팅 메시지 조회 |
+| `send_message` | 채널 또는 채팅에 메시지 전송 |
+| `list_chats` | 1:1 및 그룹 채팅 목록 |
+| `search_messages` | 메시지 검색 (KQL) |
+| `get_me` | 내 프로필 조회 |
+| `get_user` | 사용자 프로필 조회 |
 
 ## Development
 
 ```bash
 bun install           # 의존성 설치
-bun dev               # 개발 모드 (watch, stdio)
-bun start:http        # HTTP 모드 테스트
+bun run start         # 서버 시작
+bun dev               # watch 모드
 bunx vitest run       # 단위 테스트
-docker compose up     # Docker 테스트
+docker compose up     # Docker 실행
 ```
+
+자세한 설정 방법은 [USAGE.md](USAGE.md)를 참조하세요.
 
 ## License
 

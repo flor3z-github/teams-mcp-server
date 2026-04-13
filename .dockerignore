@@ -1,0 +1,15 @@
+node_modules
+dist
+coverage
+test
+.git
+.env
+.claude
+*.md
+.gitignore
+.eslintrc.json
+eslint.config.js
+prettierrc.json
+vitest.config.ts
+tsconfig.json
+.nvmrc

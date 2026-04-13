@@ -1,6 +1,6 @@
 {
   "name": "teams",
-  "description": "Microsoft Teams channel for Claude Code — webhook-based messaging bridge with built-in access control. Manage pairing, allowlists, and policy via /teams:access.",
-  "version": "0.1.0",
-  "keywords": ["teams", "messaging", "channel", "mcp"]
+  "description": "Microsoft Graph API MCP server for Teams — multi-user authentication via MSAL device code flow.",
+  "version": "0.3.0",
+  "keywords": ["teams", "graph", "mcp"]
 }

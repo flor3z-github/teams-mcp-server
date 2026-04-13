@@ -1,5 +1,5 @@
 {
-  "name": "claude-code-teams-chat",
+  "name": "teams-mcp-server",
   "version": "0.3.0",
   "type": "module",
   "main": "src/index.ts",

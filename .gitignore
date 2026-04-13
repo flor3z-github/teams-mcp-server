@@ -7,8 +7,6 @@ dist/
 
 # State files
 .env
-access.json
-approved/
 
 # OS
 .DS_Store
