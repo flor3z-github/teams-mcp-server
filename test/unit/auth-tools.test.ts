@@ -31,16 +31,14 @@ beforeEach(() => {
 });
 
 describe("도구 목록", () => {
-  it("authTools에 auth_status, auth_login 두 도구가 정의됨", () => {
+  it("authTools에 auth_status 도구가 정의됨", () => {
     const names = authTools.map((t) => t.name);
     expect(names).toContain("auth_status");
-    expect(names).toContain("auth_login");
-    expect(names).toHaveLength(2);
+    expect(names).toHaveLength(1);
   });
 
-  it("authHandlers에 auth_status, auth_login 핸들러가 등록됨", () => {
+  it("authHandlers에 auth_status 핸들러가 등록됨", () => {
     expect(authHandlers.auth_status).toBeDefined();
-    expect(authHandlers.auth_login).toBeDefined();
   });
 });
 
@@ -82,8 +80,3 @@ describe("auth_status (정상)", () => {
   });
 });
 
-describe("auth_login은 auth_status와 동일", () => {
-  it("authHandlers.auth_login === authHandlers.auth_status (같은 함수 참조)", () => {
-    expect(authHandlers.auth_login).toBe(authHandlers.auth_status);
-  });
-});

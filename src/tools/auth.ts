@@ -14,16 +14,6 @@ export const authTools: Tool[] = [
       properties: {},
     },
   },
-  {
-    name: "auth_login",
-    description:
-      "Authentication is handled via OAuth flow when connecting to this server. " +
-      "This tool shows current authentication status.",
-    inputSchema: {
-      type: "object" as const,
-      properties: {},
-    },
-  },
 ];
 
 export const authHandlers: Record<
@@ -34,7 +24,6 @@ export const authHandlers: Record<
   ) => Promise<{ content: { type: string; text: string }[] }>
 > = {
   auth_status: handleAuthStatus,
-  auth_login: handleAuthStatus,
 };
 
 async function handleAuthStatus(

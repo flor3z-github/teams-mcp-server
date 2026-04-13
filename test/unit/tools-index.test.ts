@@ -5,11 +5,13 @@ describe("tools/index", () => {
   it("모든 도구가 tools 배열에 포함됨", () => {
     const names = tools.map((t) => t.name);
     expect(names).toContain("auth_status");
-    expect(names).toContain("auth_login");
     expect(names).toContain("list_teams");
     expect(names).toContain("list_channels");
+    expect(names).toContain("list_team_members");
     expect(names).toContain("get_messages");
     expect(names).toContain("send_message");
+    expect(names).toContain("reply_to_message");
+    expect(names).toContain("get_message_replies");
     expect(names).toContain("list_chats");
     expect(names).toContain("search_messages");
     expect(names).toContain("get_me");

@@ -4,6 +4,7 @@ import type { Config } from "../../src/config.js";
 vi.mock("../../src/graph/client.js", () => ({
   listTeams: vi.fn(),
   listChannels: vi.fn(),
+  listTeamMembers: vi.fn(),
 }));
 
 // graph/auth.ts를 mock해야 client.ts import 시 에러 방지
@@ -16,6 +17,7 @@ import * as graph from "../../src/graph/client.js";
 
 const mockListTeams = vi.mocked(graph.listTeams);
 const mockListChannels = vi.mocked(graph.listChannels);
+const mockListTeamMembers = vi.mocked(graph.listTeamMembers);
 
 const config: Config = { port: 3978, stateDir: "/tmp", logLevel: "info" };
 
@@ -50,6 +52,26 @@ describe("list_channels", () => {
   it("team_id 누락 시 ValidationError", async () => {
     await expect(
       teamsHandlers.list_channels({}, config),
+    ).rejects.toThrow();
+  });
+});
+
+describe("list_team_members", () => {
+  it("팀 멤버 목록을 JSON으로 반환", async () => {
+    mockListTeamMembers.mockResolvedValue([
+      { id: "u1", displayName: "User A", email: "a@test.com", roles: ["owner"] },
+    ]);
+    const result = await teamsHandlers.list_team_members(
+      { team_id: "t1" },
+      config,
+    );
+    expect(result.content[0].text).toContain("User A");
+    expect(mockListTeamMembers).toHaveBeenCalledWith("t1");
+  });
+
+  it("team_id 누락 시 에러", async () => {
+    await expect(
+      teamsHandlers.list_team_members({}, config),
     ).rejects.toThrow();
   });
 });

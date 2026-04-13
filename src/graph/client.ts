@@ -39,6 +39,17 @@ export async function listChannels(teamId: string): Promise<unknown> {
   }));
 }
 
+export async function listTeamMembers(teamId: string): Promise<unknown> {
+  const client = createClient();
+  const result = await client.api(`/teams/${teamId}/members`).get();
+  return (result.value || []).map((m: any) => ({
+    id: m.id,
+    displayName: m.displayName,
+    email: m.email,
+    roles: m.roles || [],
+  }));
+}
+
 // ─── Messages ───
 
 export async function getChannelMessages(
@@ -66,6 +77,39 @@ export async function getChatMessages(
     .orderby("createdDateTime desc")
     .get();
   return formatMessages(result.value || []);
+}
+
+export async function getChannelMessageReplies(
+  teamId: string,
+  channelId: string,
+  messageId: string,
+  top: number = 25,
+): Promise<unknown> {
+  const client = createClient();
+  const result = await client
+    .api(`/teams/${teamId}/channels/${channelId}/messages/${messageId}/replies`)
+    .top(top)
+    .orderby("createdDateTime asc")
+    .get();
+  return formatMessages(result.value || []);
+}
+
+export async function replyToChannelMessage(
+  teamId: string,
+  channelId: string,
+  messageId: string,
+  text: string,
+): Promise<unknown> {
+  const client = createClient();
+  const result = await client
+    .api(`/teams/${teamId}/channels/${channelId}/messages/${messageId}/replies`)
+    .post({
+      body: {
+        contentType: "html",
+        content: markdownToHtml(text),
+      },
+    });
+  return { id: result.id, createdDateTime: toKST(result.createdDateTime) };
 }
 
 export async function sendChannelMessage(

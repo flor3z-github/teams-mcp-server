@@ -27,9 +27,27 @@ export const teamsTools: Tool[] = [
       required: ["team_id"],
     },
   },
+  {
+    name: "list_team_members",
+    description: "List all members of a specific Team.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        team_id: {
+          type: "string",
+          description: "The Team ID (from list_teams)",
+        },
+      },
+      required: ["team_id"],
+    },
+  },
 ];
 
 const listChannelsSchema = z.object({
+  team_id: z.string().min(1, "team_id is required"),
+});
+
+const listTeamMembersSchema = z.object({
   team_id: z.string().min(1, "team_id is required"),
 });
 
@@ -39,6 +57,7 @@ export const teamsHandlers: Record<
 > = {
   list_teams: handleListTeams,
   list_channels: handleListChannels,
+  list_team_members: handleListTeamMembers,
 };
 
 async function handleListTeams(
@@ -59,5 +78,16 @@ async function handleListChannels(
   const channels = await graph.listChannels(team_id);
   return {
     content: [{ type: "text", text: JSON.stringify(channels, null, 2) }],
+  };
+}
+
+async function handleListTeamMembers(
+  input: unknown,
+  _config: Config,
+): Promise<{ content: { type: string; text: string }[] }> {
+  const { team_id } = validateInput(listTeamMembersSchema, input);
+  const members = await graph.listTeamMembers(team_id);
+  return {
+    content: [{ type: "text", text: JSON.stringify(members, null, 2) }],
   };
 }

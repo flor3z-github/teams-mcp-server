@@ -6,6 +6,8 @@ vi.mock("../../src/graph/client.js", () => ({
   getChatMessages: vi.fn(),
   sendChannelMessage: vi.fn(),
   sendChatMessage: vi.fn(),
+  replyToChannelMessage: vi.fn(),
+  getChannelMessageReplies: vi.fn(),
   listChats: vi.fn(),
 }));
 
@@ -20,6 +22,8 @@ const mockGetChannelMessages = vi.mocked(graph.getChannelMessages);
 const mockGetChatMessages = vi.mocked(graph.getChatMessages);
 const mockSendChannelMessage = vi.mocked(graph.sendChannelMessage);
 const mockSendChatMessage = vi.mocked(graph.sendChatMessage);
+const mockReplyToChannelMessage = vi.mocked(graph.replyToChannelMessage);
+const mockGetChannelMessageReplies = vi.mocked(graph.getChannelMessageReplies);
 const mockListChats = vi.mocked(graph.listChats);
 
 const config: Config = { port: 3978, stateDir: "/tmp", logLevel: "info" };
@@ -81,6 +85,47 @@ describe("send_message", () => {
     await expect(
       messageHandlers.send_message({ chat_id: "chat1" }, config),
     ).rejects.toThrow();
+  });
+});
+
+describe("reply_to_message", () => {
+  it("채널 메시지에 답글 전송", async () => {
+    mockReplyToChannelMessage.mockResolvedValue({ id: "reply1" });
+    const result = await messageHandlers.reply_to_message(
+      { team_id: "t1", channel_id: "c1", message_id: "m1", text: "reply" },
+      config,
+    );
+    expect(result.content[0].text).toContain("Reply sent");
+    expect(mockReplyToChannelMessage).toHaveBeenCalledWith("t1", "c1", "m1", "reply");
+  });
+
+  it("필수 파라미터 누락 시 에러", async () => {
+    await expect(
+      messageHandlers.reply_to_message({ team_id: "t1" }, config),
+    ).rejects.toThrow();
+  });
+});
+
+describe("get_message_replies", () => {
+  it("채널 메시지 답글 목록 조회", async () => {
+    mockGetChannelMessageReplies.mockResolvedValue([
+      { id: "r1", from: "User A", body: "reply text" },
+    ]);
+    const result = await messageHandlers.get_message_replies(
+      { team_id: "t1", channel_id: "c1", message_id: "m1" },
+      config,
+    );
+    expect(result.content[0].text).toContain("r1");
+    expect(mockGetChannelMessageReplies).toHaveBeenCalledWith("t1", "c1", "m1", undefined);
+  });
+
+  it("top 파라미터 전달", async () => {
+    mockGetChannelMessageReplies.mockResolvedValue([]);
+    await messageHandlers.get_message_replies(
+      { team_id: "t1", channel_id: "c1", message_id: "m1", top: 10 },
+      config,
+    );
+    expect(mockGetChannelMessageReplies).toHaveBeenCalledWith("t1", "c1", "m1", 10);
   });
 });
 
