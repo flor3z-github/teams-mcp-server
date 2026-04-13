@@ -82,6 +82,27 @@ export function startHttpServer(config: Config): HttpServerHandle {
   const transports = new Map<string, StreamableHTTPServerTransport>();
   const sessionCredentialsMap = new Map<string, SessionCredentials>();
   const transportSessionIds = new Map<StreamableHTTPServerTransport, string>();
+  const sessionLastActivity = new Map<string, number>();
+
+  const SESSION_TTL_MS = 30 * 60 * 1000;
+  const SWEEP_INTERVAL_MS = 5 * 60 * 1000;
+
+  const sweepInterval = setInterval(() => {
+    const now = Date.now();
+    for (const [sid, lastActivity] of sessionLastActivity) {
+      if (now - lastActivity > SESSION_TTL_MS) {
+        const transport = transports.get(sid);
+        if (transport) {
+          transport.close().catch(() => {});
+        }
+        sessionLastActivity.delete(sid);
+        process.stderr.write(
+          `teams mcp: session expired (idle ${Math.round((now - lastActivity) / 1000 / 60)}m): ${sid}\n`,
+        );
+      }
+    }
+  }, SWEEP_INTERVAL_MS);
+  sweepInterval.unref();
 
   function extractCredentials(req: express.Request): SessionCredentials {
     const extra = req.auth?.extra as Record<string, unknown> | undefined;
@@ -95,6 +116,7 @@ export function startHttpServer(config: Config): HttpServerHandle {
 
     try {
       if (sessionId && transports.has(sessionId)) {
+        sessionLastActivity.set(sessionId, Date.now());
         const transport = transports.get(sessionId)!;
         await sessionStore.run(credentials, async () => {
           await transport.handleRequest(req, res, req.body);
@@ -110,6 +132,7 @@ export function startHttpServer(config: Config): HttpServerHandle {
             transports.set(sid, transport);
             sessionCredentialsMap.set(sid, credentials);
             transportSessionIds.set(transport, sid);
+            sessionLastActivity.set(sid, Date.now());
           },
         });
 
@@ -118,6 +141,7 @@ export function startHttpServer(config: Config): HttpServerHandle {
           if (sid) {
             transports.delete(sid);
             sessionCredentialsMap.delete(sid);
+            sessionLastActivity.delete(sid);
             transportSessionIds.delete(transport);
             process.stderr.write(`teams mcp: session closed: ${sid}\n`);
           }
@@ -156,6 +180,7 @@ export function startHttpServer(config: Config): HttpServerHandle {
       res.status(400).send("Invalid or missing session ID");
       return;
     }
+    sessionLastActivity.set(sessionId, Date.now());
     const transport = transports.get(sessionId)!;
     const credentials = sessionCredentialsMap.get(sessionId);
     if (!credentials) {
@@ -196,6 +221,7 @@ export function startHttpServer(config: Config): HttpServerHandle {
 
   return {
     stop: () => {
+      clearInterval(sweepInterval);
       for (const [sid, transport] of transports) {
         try {
           transport.close();
