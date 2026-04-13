@@ -2,10 +2,10 @@ services:
   teams-mcp:
     build: .
     ports:
-      - "3978:3978"
+      - "${TEAMS_PORT:-3978}:${TEAMS_PORT:-3978}"
     environment:
       - MCP_TRANSPORT=http
-      - TEAMS_PORT=3978
+      - TEAMS_PORT=${TEAMS_PORT:-3978}
       - LOG_LEVEL=info
     volumes:
       - teams-state:/root/.claude/channels/teams
