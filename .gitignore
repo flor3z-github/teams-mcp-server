@@ -8,6 +8,15 @@ coverage/
 
 # State files
 .env
+.env.bak-*
+
+# TLS 인증서 / 개인키 — 절대 커밋 금지
+certs/
+*.pem
+*.key
+
+# 배포 호스트 전용 compose 오버라이드
+docker-compose.override.yml
 
 # OS
 .DS_Store
