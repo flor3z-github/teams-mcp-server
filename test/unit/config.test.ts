@@ -6,6 +6,8 @@ describe("loadConfig", () => {
 
   beforeEach(() => {
     vi.resetModules();
+    // 실제 홈 디렉토리의 state .env가 테스트에 섞이지 않도록 격리
+    process.env.HOME = "/nonexistent-teams-mcp-test-home";
   });
 
   afterEach(() => {
@@ -48,6 +50,69 @@ describe("loadConfig", () => {
     const { loadConfig } = await import("../../src/config.js");
     expect(() => loadConfig()).toThrow("process.exit");
     expect(exitSpy).toHaveBeenCalledWith(1);
+    exitSpy.mockRestore();
+  });
+});
+
+describe("loadConfig — host / TLS", () => {
+  const origEnv = { ...process.env };
+
+  beforeEach(() => {
+    vi.resetModules();
+    delete process.env.TEAMS_PORT;
+    delete process.env.LOG_LEVEL;
+    delete process.env.TEAMS_HOST;
+    delete process.env.TEAMS_TLS_CERT;
+    delete process.env.TEAMS_TLS_KEY;
+    // 실제 state 디렉토리의 .env가 테스트에 섞이지 않도록 격리
+    process.env.TEAMS_STATE_DIR = "/nonexistent-teams-mcp-test-state";
+  });
+
+  afterEach(() => {
+    process.env = { ...origEnv };
+  });
+
+  it("host 기본값은 127.0.0.1", async () => {
+    const { loadConfig } = await import("../../src/config.js");
+    const config = loadConfig();
+    expect(config.host).toBe("127.0.0.1");
+    expect(config.tlsCert).toBeUndefined();
+    expect(config.tlsKey).toBeUndefined();
+  });
+
+  it("TEAMS_HOST로 바인딩 주소 변경", async () => {
+    process.env.TEAMS_HOST = "0.0.0.0";
+    const { loadConfig } = await import("../../src/config.js");
+    expect(loadConfig().host).toBe("0.0.0.0");
+  });
+
+  it("TLS cert/key 둘 다 지정하면 통과", async () => {
+    process.env.TEAMS_TLS_CERT = "/tmp/cert.pem";
+    process.env.TEAMS_TLS_KEY = "/tmp/key.pem";
+    const { loadConfig } = await import("../../src/config.js");
+    const config = loadConfig();
+    expect(config.tlsCert).toBe("/tmp/cert.pem");
+    expect(config.tlsKey).toBe("/tmp/key.pem");
+  });
+
+  it("TLS cert만 지정하면 exit", async () => {
+    process.env.TEAMS_TLS_CERT = "/tmp/cert.pem";
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation(() => {
+      throw new Error("process.exit");
+    });
+    const { loadConfig } = await import("../../src/config.js");
+    expect(() => loadConfig()).toThrow("process.exit");
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    exitSpy.mockRestore();
+  });
+
+  it("TLS key만 지정하면 exit", async () => {
+    process.env.TEAMS_TLS_KEY = "/tmp/key.pem";
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation(() => {
+      throw new Error("process.exit");
+    });
+    const { loadConfig } = await import("../../src/config.js");
+    expect(() => loadConfig()).toThrow("process.exit");
     exitSpy.mockRestore();
   });
 });

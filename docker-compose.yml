@@ -7,11 +7,20 @@ services:
       - .env
     environment:
       - TEAMS_PORT=${TEAMS_PORT:-3978}
+      # 컨테이너 밖에서 접근하려면 0.0.0.0 바인딩이 필요하다 (기본값 127.0.0.1은 컨테이너 내부 전용)
+      - TEAMS_HOST=0.0.0.0
       - TEAMS_STATE_DIR=/data
     volumes:
       - teams-state:/data
+      # HTTPS 사용 시 인증서를 마운트하고 .env에 TEAMS_TLS_CERT/TEAMS_TLS_KEY 경로를 지정한다
+      # - ./certs:/certs:ro
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:${TEAMS_PORT:-3978}/health"]
+      # HTTPS(자체 서명 포함) 우선 시도 후 HTTP로 폴백
+      test:
+        [
+          "CMD-SHELL",
+          "curl -skf https://localhost:${TEAMS_PORT:-3978}/health || curl -sf http://localhost:${TEAMS_PORT:-3978}/health",
+        ]
       interval: 30s
       timeout: 5s
       retries: 3

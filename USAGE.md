@@ -6,6 +6,7 @@
 - [Claude Code 연결](#claude-code-연결)
 - [Docker 배포](#docker-배포)
 - [환경변수 레퍼런스](#환경변수-레퍼런스)
+- [HTTPS](#https)
 - [트러블슈팅](#트러블슈팅)
 
 ---
@@ -69,7 +70,7 @@ cp .env.example .env
 docker compose up -d
 
 # 확인
-curl http://localhost:3978/health
+curl http://localhost:3978/health   # HTTPS 사용 시: curl -k https://localhost:3978/health
 
 # 중지
 docker compose down
@@ -85,6 +86,7 @@ docker run -d --name teams-mcp \
   -v teams-state:/data \
   -e TEAMS_STATE_DIR=/data \
   -e TEAMS_PORT=3978 \
+  -e TEAMS_HOST=0.0.0.0 \
   teams-mcp-server
 ```
 
@@ -100,11 +102,64 @@ claude mcp add --transport http teams http://localhost:3978/mcp
 
 | 변수 | 기본값 | 설명 |
 |---|---|---|
-| `TEAMS_PORT` | `3978` | HTTP 서버 포트 |
+| `TEAMS_PORT` | `3978` | 서버 포트 |
+| `TEAMS_HOST` | `127.0.0.1` | 바인딩 주소. 원격 접속·Docker에서는 `0.0.0.0` 필요 |
+| `TEAMS_TLS_CERT` | (없음) | TLS 인증서 경로. `TEAMS_TLS_KEY`와 함께 지정하면 HTTPS로 기동 |
+| `TEAMS_TLS_KEY` | (없음) | TLS 개인키 경로 |
+| `TEAMS_BASE_URL` | (없음) | 외부 접근 URL. 리버스 프록시 뒤에서 실행 시 지정 (설정 시 `trust proxy` 활성화) |
 | `TEAMS_STATE_DIR` | `~/.claude/channels/teams` | State 파일 디렉토리 (MSAL 캐시, OAuth 저장소) |
 | `LOG_LEVEL` | `info` | `debug` / `info` / `warn` / `error` |
 
 환경변수는 `.env` 파일 또는 시스템 환경변수로 설정할 수 있습니다.
+
+`TEAMS_TLS_CERT`와 `TEAMS_TLS_KEY`는 둘 다 지정하거나 둘 다 생략해야 합니다. 하나만 지정하면 기동 시 설정 검증 오류로 종료됩니다.
+
+> **주의 — 바인딩 기본값 변경 (호환성 깨짐)**
+>
+> 이전 버전은 항상 `0.0.0.0`에 바인딩했습니다. 현재 기본값은 `127.0.0.1`(로컬 전용)입니다.
+> LAN·원격 호스트에서 서버를 실행 중이었다면 업데이트 후 외부에서 접속되지 않습니다.
+> 서버는 정상적으로 "listening" 로그를 출력하고 연결만 거부되므로 증상이 드러나지 않습니다.
+> `TEAMS_HOST=0.0.0.0`을 명시하세요. Docker(`docker-compose.yml`)는 이미 설정돼 있습니다.
+
+---
+
+## HTTPS
+
+인증서와 개인키를 지정하면 서버가 HTTPS로 기동합니다.
+
+```bash
+TEAMS_TLS_CERT=/etc/letsencrypt/live/example.com/fullchain.pem \
+TEAMS_TLS_KEY=/etc/letsencrypt/live/example.com/privkey.pem \
+TEAMS_HOST=0.0.0.0 \
+bun run start
+```
+
+OAuth issuer URL은 TLS 설정 여부에 따라 `http://` / `https://`가 자동으로 결정됩니다.
+`0.0.0.0` 또는 루프백 바인딩일 때 issuer 호스트명은 `localhost`로 고정됩니다.
+
+### 로컬 테스트용 자체 서명 인증서
+
+```bash
+openssl req -x509 -newkey rsa:2048 -nodes -days 365 \
+  -keyout key.pem -out cert.pem -subj "/CN=localhost"
+
+TEAMS_TLS_CERT=$PWD/cert.pem TEAMS_TLS_KEY=$PWD/key.pem bun run start
+curl -k https://localhost:3978/health
+```
+
+자체 서명 인증서는 MCP 클라이언트가 거부할 수 있습니다. 실제 배포에는 신뢰된 CA 인증서를 사용하세요.
+
+### 리버스 프록시에서 TLS 종단
+
+nginx·caddy 등이 TLS를 처리하는 경우 `TEAMS_TLS_*` 없이 `TEAMS_BASE_URL`만 지정합니다.
+
+```bash
+TEAMS_HOST=127.0.0.1 TEAMS_BASE_URL=https://teams-mcp.example.com bun run start
+```
+
+### 보안 주의
+
+`TEAMS_HOST`를 루프백이 아닌 주소로 바꾸면서 TLS도 리버스 프록시도 없으면, Bearer 토큰과 OAuth 인가 코드가 평문으로 전송됩니다. 이 경우 서버가 기동 시 경고를 출력합니다.
 
 ---
 
@@ -113,7 +168,7 @@ claude mcp add --transport http teams http://localhost:3978/mcp
 ### 헬스체크
 
 ```bash
-curl http://localhost:3978/health
+curl http://localhost:3978/health   # HTTPS 사용 시: curl -k https://localhost:3978/health
 # {"status":"ok","sessions":0,"ts":"..."}
 ```
 

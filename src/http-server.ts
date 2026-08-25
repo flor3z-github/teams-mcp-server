@@ -1,4 +1,8 @@
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
+import https from "node:https";
+import type { Server as HttpServer } from "node:http";
+import type { Server as HttpsServer } from "node:https";
 import express from "express";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
@@ -17,13 +21,63 @@ export interface HttpServerHandle {
   stop(): void;
 }
 
+function isLoopback(host: string): boolean {
+  return host === "127.0.0.1" || host === "localhost" || host === "::1";
+}
+
+/**
+ * TLS cert/key를 읽는다. 둘 다 설정된 경우에만 HTTPS로 동작한다.
+ * 파일 읽기 실패는 복구 불가능하므로 즉시 종료한다.
+ */
+function loadTlsOptions(config: Config): { cert: Buffer; key: Buffer } | null {
+  if (!config.tlsCert || !config.tlsKey) return null;
+  try {
+    return {
+      cert: readFileSync(config.tlsCert),
+      key: readFileSync(config.tlsKey),
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    process.stderr.write(`teams mcp: failed to read TLS cert/key: ${message}\n`);
+    process.exit(1);
+  }
+}
+
 export function startHttpServer(config: Config): HttpServerHandle {
+  const tlsOptions = loadTlsOptions(config);
+  const scheme = tlsOptions ? "https" : "http";
+
   const provider = new TeamsOAuthProvider(config.port);
+
+  // 루프백/와일드카드 바인딩은 issuer 호스트명을 localhost로 고정한다.
+  // (기존 클라이언트 설정 호환 + MCP SDK의 issuer 검증 통과)
+  const issuerHost =
+    config.host === "0.0.0.0" || config.host === "::" || isLoopback(config.host)
+      ? "localhost"
+      : config.host;
+
   const issuerUrl = config.baseUrl
     ? new URL(config.baseUrl)
-    : new URL(`http://localhost:${config.port}`);
+    : new URL(`${scheme}://${issuerHost}:${config.port}`);
+
+  if (
+    !tlsOptions &&
+    !isLoopback(config.host) &&
+    !config.baseUrl?.startsWith("https:")
+  ) {
+    process.stderr.write(
+      "teams mcp: WARNING: listening on a non-loopback address without TLS. " +
+        "Bearer tokens and OAuth authorization codes are sent in cleartext. " +
+        "Set TEAMS_TLS_CERT/TEAMS_TLS_KEY, or terminate TLS at a reverse proxy.\n",
+    );
+  }
 
   const app = express();
+
+  // 리버스 프록시 뒤에서만 X-Forwarded-* 를 신뢰한다 (TEAMS_BASE_URL이 프록시 신호)
+  if (config.baseUrl) {
+    app.set("trust proxy", 1);
+  }
 
   app.use(express.urlencoded({ extended: false }));
   app.use(express.json());
@@ -213,11 +267,17 @@ export function startHttpServer(config: Config): HttpServerHandle {
     });
   });
 
-  const server = app.listen(config.port, "0.0.0.0", () => {
+  const onListening = () => {
     process.stderr.write(
-      `teams mcp: server listening on 0.0.0.0:${config.port}\n`,
+      `teams mcp: server listening on ${scheme}://${config.host}:${config.port}\n`,
     );
-  });
+  };
+
+  const server: HttpServer | HttpsServer = tlsOptions
+    ? https
+        .createServer(tlsOptions, app)
+        .listen(config.port, config.host, onListening)
+    : app.listen(config.port, config.host, onListening);
 
   return {
     stop: () => {

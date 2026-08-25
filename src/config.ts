@@ -34,12 +34,21 @@ function loadEnvFile(): void {
   }
 }
 
-const configSchema = z.object({
-  port: z.number().int().min(1).max(65535).default(3978),
-  baseUrl: z.string().url().optional(),
-  stateDir: z.string().default(STATE_DIR_DEFAULT),
-  logLevel: z.enum(["debug", "info", "warn", "error"]).default("info"),
-});
+const configSchema = z
+  .object({
+    port: z.number().int().min(1).max(65535).default(3978),
+    host: z.string().min(1).default("127.0.0.1"),
+    baseUrl: z.string().url().optional(),
+    tlsCert: z.string().min(1).optional(),
+    tlsKey: z.string().min(1).optional(),
+    stateDir: z.string().default(STATE_DIR_DEFAULT),
+    logLevel: z.enum(["debug", "info", "warn", "error"]).default("info"),
+  })
+  .refine((cfg) => !!cfg.tlsCert === !!cfg.tlsKey, {
+    message:
+      "TEAMS_TLS_CERT and TEAMS_TLS_KEY must both be set, or both be omitted",
+    path: ["tlsCert"],
+  });
 
 export type Config = z.infer<typeof configSchema>;
 
@@ -49,7 +58,10 @@ export function loadConfig(): Config {
   try {
     return configSchema.parse({
       port: Number(process.env.TEAMS_PORT) || 3978,
+      host: process.env.TEAMS_HOST || "127.0.0.1",
       baseUrl: process.env.TEAMS_BASE_URL || undefined,
+      tlsCert: process.env.TEAMS_TLS_CERT || undefined,
+      tlsKey: process.env.TEAMS_TLS_KEY || undefined,
       stateDir: process.env.TEAMS_STATE_DIR || STATE_DIR_DEFAULT,
       logLevel: process.env.LOG_LEVEL || "info",
     });

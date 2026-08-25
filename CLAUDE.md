@@ -24,7 +24,7 @@ Claude Code C ── Bearer Token C ──┘         │
 - `src/auth/provider.ts` — OAuthServerProvider 구현 (device code flow 통합)
 - `src/graph/auth.ts` — MSAL 초기화, 다중 사용자 토큰 관리
 - `src/graph/client.ts` — Microsoft Graph API 클라이언트
-- `src/http-server.ts` — Express HTTP 서버 (mcpAuthRouter + requireBearerAuth)
+- `src/http-server.ts` — Express HTTP/HTTPS 서버 (mcpAuthRouter + requireBearerAuth)
 - `src/mcp-server.ts` — MCP Server 인스턴스 생성, 도구 등록
 - `src/tools/` — MCP 도구 (auth, teams, messages, search)
 - `src/utils/` — 에러, 검증, Markdown↔HTML
@@ -63,4 +63,6 @@ bunx vitest run       # 단위 테스트
 - 파일 I/O: atomic write (tmp + rename), 0o600/0o700 권한
 - 로깅: `process.stderr.write()`, 접두사 `teams mcp:`, 이모지 사용 금지
 - Express + MCP SDK auth (mcpAuthRouter, requireBearerAuth)
+- 전송 보안: `TEAMS_TLS_CERT`/`TEAMS_TLS_KEY` 둘 다 있으면 `https.createServer`, 없으면 평문 HTTP
+- 바인딩 기본값 `127.0.0.1` (`TEAMS_HOST`로 변경). 루프백/와일드카드일 때 OAuth issuer 호스트명은 `localhost`로 고정
 - AsyncLocalStorage로 요청별 credential 전파
