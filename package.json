@@ -5,6 +5,7 @@
   "main": "src/index.ts",
   "scripts": {
     "start": "bun run src/index.ts",
+    "login": "bun run src/index.ts login",
     "dev": "bun --watch src/index.ts",
     "test": "bun test",
     "test:vitest": "vitest",

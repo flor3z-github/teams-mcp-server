@@ -55,6 +55,24 @@ claude mcp add -s user --transport http teams http://localhost:3978/mcp
 
 각 클라이언트는 독립된 인증을 수행합니다. 여러 사용자가 하나의 서버에 접속하여 각자의 Microsoft 계정으로 사용할 수 있습니다.
 
+### stdio 모드
+
+서버를 따로 띄우지 않고 Claude Code가 프로세스를 직접 실행합니다. 한 사람이 자기 PC에서 쓸 때 적합합니다.
+
+```bash
+bun run login
+```
+
+터미널에 표시된 URL과 코드로 Microsoft 계정에 로그인하면 `TEAMS_STATE_DIR`의 MSAL 캐시에 저장됩니다. 서버를 재시작하지 않아도 다음 도구 호출부터 반영됩니다.
+
+```bash
+claude mcp add teams -s user -e TEAMS_TRANSPORT=stdio -- "$(which bun)" "$PWD/src/index.ts"
+```
+
+- `bun`은 절대 경로로 지정합니다. 데스크톱 앱 등은 셸의 PATH를 물려받지 않을 수 있습니다.
+- MSAL 캐시에 계정이 0개면 `bun run login` 안내, 2개 이상이면 에러를 냅니다. 같은 `TEAMS_STATE_DIR`을 HTTP 서버와 공유하면 계정이 여러 개가 될 수 있으니 stdio용 디렉토리를 따로 지정하세요.
+- HTTP 서버와 함께 쓰려면 이름을 나눠 등록합니다 (예: stdio는 `teams`, 원격 HTTP는 `teams-remote`).
+
 ---
 
 ## Docker 배포
@@ -102,6 +120,7 @@ claude mcp add --transport http teams http://localhost:3978/mcp
 
 | 변수 | 기본값 | 설명 |
 |---|---|---|
+| `TEAMS_TRANSPORT` | `http` | `http`(멀티유저 서버) / `stdio`(단일 사용자, 아래 HTTP 관련 변수 무시) |
 | `TEAMS_PORT` | `3978` | 서버 포트 |
 | `TEAMS_HOST` | `127.0.0.1` | 바인딩 주소. 원격 접속·Docker에서는 `0.0.0.0` 필요 |
 | `TEAMS_TLS_CERT` | (없음) | TLS 인증서 경로. `TEAMS_TLS_KEY`와 함께 지정하면 HTTPS로 기동 |

@@ -135,6 +135,28 @@ export async function acquireTokenDeviceCode(
 }
 
 /**
+ * stdio(단일 사용자) 모드용: MSAL 캐시에 계정이 정확히 1개면 그 homeAccountId를 반환한다.
+ * 호출마다 캐시 파일을 다시 읽으므로 서버 재시작 없이 login 결과가 반영된다.
+ */
+export async function getSingleAccountId(): Promise<string> {
+  if (!msalApp) {
+    throw new Error("Auth not initialized. Call initAuth() first.");
+  }
+  const accounts = await msalApp.getTokenCache().getAllAccounts();
+  if (accounts.length === 1) return accounts[0].homeAccountId;
+  if (accounts.length === 0) {
+    throw new Error(
+      "Not authenticated. Run `bun run login` in the teams-mcp-server directory.",
+    );
+  }
+  // 임의로 고르면 다른 계정 이름으로 메시지가 나갈 수 있다
+  throw new Error(
+    `Multiple accounts in token cache (${accounts.map((a) => a.username).join(", ")}). ` +
+      "Use a separate TEAMS_STATE_DIR for stdio mode, or delete graph-token-cache.json and run login again.",
+  );
+}
+
+/**
  * 현재 세션의 Graph 토큰을 획득한다.
  * sessionStore에서 msalAccountId를 읽어 해당 계정의 토큰을 반환한다.
  */

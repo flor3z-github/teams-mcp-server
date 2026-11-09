@@ -4,6 +4,8 @@ import {
   CallToolRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import type { Config } from "./config.js";
+import { sessionStore } from "./context.js";
+import { getSingleAccountId } from "./graph/auth.js";
 import { tools, toolHandlers } from "./tools/index.js";
 import { formatErrorResponse } from "./utils/errors.js";
 
@@ -32,6 +34,14 @@ export async function createTeamsServer(config: Config): Promise<Server> {
       };
     }
     try {
+      // stdio는 Bearer 토큰이 없으므로 MSAL 캐시의 단일 계정을 세션으로 주입한다.
+      // HTTP는 http-server.ts가 Bearer 토큰 기준으로 주입하므로 여기서 대체하지 않는다.
+      if (config.transport === "stdio") {
+        const msalAccountId = await getSingleAccountId();
+        return await sessionStore.run({ msalAccountId }, () =>
+          handler(args, config),
+        );
+      }
       return await handler(args, config);
     } catch (error) {
       return {

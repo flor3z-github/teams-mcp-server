@@ -2,7 +2,10 @@
 
 ## Architecture
 
-Teams MCP Server는 HTTP 전용 MCP 서버이다. 멀티유저 인증을 지원한다.
+Teams MCP Server는 두 전송을 지원한다. `TEAMS_TRANSPORT`로 고른다.
+
+- `http` (기본): 멀티유저. OAuth + Bearer 토큰으로 요청별 계정을 구분한다 (아래 그림).
+- `stdio`: 단일 사용자. OAuth 없이 MSAL 캐시의 계정을 쓴다 (아래 "stdio 인증").
 
 ```
 Claude Code A ── Bearer Token A ──┐
@@ -16,8 +19,8 @@ Claude Code C ── Bearer Token C ──┘         │
 
 ### 모듈 구조
 
-- `src/index.ts` — 엔트리포인트, 글로벌 에러 핸들러
-- `src/server.ts` — `runServer()` (initAuth + initStore + HTTP 서버)
+- `src/index.ts` — 엔트리포인트, 글로벌 에러 핸들러, `login` 서브커맨드
+- `src/server.ts` — `runServer()` (initAuth 후 stdio 연결, 또는 initStore + HTTP 서버)
 - `src/config.ts` — Zod 기반 환경변수 검증
 - `src/context.ts` — AsyncLocalStorage 기반 세션 credential 저장소
 - `src/auth/store.ts` — 파일 기반 OAuth 토큰 저장소 (oauth-store.json)
@@ -39,11 +42,20 @@ Claude Code C ── Bearer Token C ──┘         │
 6. 이후 요청: Bearer 토큰 → `msalAccountId` 추출 → `AsyncLocalStorage`에 주입
 7. `getToken()` → 해당 계정의 Graph 토큰 silent 획득
 
+### stdio 인증
+
+1. `bun run login` → device code flow → MSAL 캐시에 계정 저장
+2. 도구 호출마다 `getSingleAccountId()`가 캐시를 다시 읽어 계정 1개를 고름 (0개·2개 이상이면 에러, 임의 선택 금지)
+3. `mcp-server.ts`가 그 계정을 `sessionStore.run()`으로 주입 → 이후 HTTP와 같은 `getToken()` 경로
+4. 이 대체 주입은 `transport === "stdio"`일 때만. HTTP 경로에서 캐시 계정으로 대체하면 Bearer 없이 남의 계정을 쓰게 된다
+
 ## Development
 
 ```bash
 bun install           # 의존성 설치
 bun run start         # HTTP 서버 시작
+TEAMS_TRANSPORT=stdio bun run start   # stdio 서버 시작
+bun run login         # stdio용 MS 계정 로그인 (device code)
 bun dev               # watch 모드
 bunx vitest run       # 단위 테스트
 ```

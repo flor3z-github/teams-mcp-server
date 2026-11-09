@@ -1,8 +1,8 @@
 # Teams MCP Server
 
-Microsoft Graph API 기반 MCP 서버. HTTP transport로 동작하며, 멀티유저 인증을 지원합니다.
+Microsoft Graph API 기반 MCP 서버. HTTP transport(멀티유저)와 stdio transport(단일 사용자)를 지원합니다.
 
-각 클라이언트가 자신의 Microsoft 계정으로 독립 인증하여 Teams 데이터에 접근합니다.
+HTTP 모드에서는 각 클라이언트가 자신의 Microsoft 계정으로 독립 인증하여 Teams 데이터에 접근합니다.
 
 ## Quick Start
 
@@ -27,6 +27,13 @@ claude mcp add --transport http teams http://localhost:3978/mcp
 ```
 
 브라우저가 열리면 Microsoft 계정으로 로그인합니다. Azure App Registration 불필요.
+
+### stdio로 연결 (서버 없이 혼자 쓸 때)
+
+```bash
+bun run login   # 터미널에 표시된 코드로 MS 계정 로그인 (1회)
+claude mcp add teams -s user -e TEAMS_TRANSPORT=stdio -- "$(which bun)" "$PWD/src/index.ts"
+```
 
 ## Features
 

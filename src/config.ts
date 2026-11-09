@@ -36,6 +36,7 @@ function loadEnvFile(): void {
 
 const configSchema = z
   .object({
+    transport: z.enum(["http", "stdio"]).default("http"),
     port: z.number().int().min(1).max(65535).default(3978),
     host: z.string().min(1).default("127.0.0.1"),
     baseUrl: z.string().url().optional(),
@@ -57,6 +58,7 @@ export function loadConfig(): Config {
 
   try {
     return configSchema.parse({
+      transport: process.env.TEAMS_TRANSPORT || "http",
       port: Number(process.env.TEAMS_PORT) || 3978,
       host: process.env.TEAMS_HOST || "127.0.0.1",
       baseUrl: process.env.TEAMS_BASE_URL || undefined,
