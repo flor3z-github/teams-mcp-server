@@ -76,6 +76,23 @@ export function markdownToHtml(md: string): string {
   return toTeamsHtml(marked.parse(md, { async: false }) as string);
 }
 
+// Claude → Teams: 평문을 그대로 보낸다. 마크다운으로 해석하지 않으므로 줄머리 '-' 가 목록이,
+// 백틱이 코드가 되지 않는다. HTML 특수문자만 이스케이프하고 줄바꿈은 <br>로 옮긴다.
+export function plainToHtml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .split("\n")
+    .join("<br>");
+}
+
+export type MessageFormat = "markdown" | "text";
+
+export function toMessageHtml(text: string, format: MessageFormat = "markdown"): string {
+  return format === "text" ? plainToHtml(text) : markdownToHtml(text);
+}
+
 /**
  * Teams 전용 <codeblock>을 표준 <pre><code>로 되돌린다.
  * turndown은 <codeblock>을 모르고, preformatted로도 취급하지 않아 들여쓰기를 접어버린다.

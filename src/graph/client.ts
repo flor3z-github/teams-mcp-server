@@ -1,7 +1,7 @@
 import { Client } from "@microsoft/microsoft-graph-client";
 import { getToken } from "./auth.js";
 import { htmlToMarkdown } from "../utils/markdown.js";
-import { markdownToHtml } from "../utils/markdown.js";
+import { toMessageHtml, type MessageFormat } from "../utils/markdown.js";
 
 function createClient(): Client {
   return Client.init({
@@ -99,6 +99,7 @@ export async function replyToChannelMessage(
   channelId: string,
   messageId: string,
   text: string,
+  format: MessageFormat = "markdown",
 ): Promise<unknown> {
   const client = createClient();
   const result = await client
@@ -106,7 +107,7 @@ export async function replyToChannelMessage(
     .post({
       body: {
         contentType: "html",
-        content: markdownToHtml(text),
+        content: toMessageHtml(text, format),
       },
     });
   return { id: result.id, createdDateTime: toKST(result.createdDateTime) };
@@ -116,6 +117,7 @@ export async function sendChannelMessage(
   teamId: string,
   channelId: string,
   text: string,
+  format: MessageFormat = "markdown",
 ): Promise<unknown> {
   const client = createClient();
   const result = await client
@@ -123,7 +125,7 @@ export async function sendChannelMessage(
     .post({
       body: {
         contentType: "html",
-        content: markdownToHtml(text),
+        content: toMessageHtml(text, format),
       },
     });
   return { id: result.id, createdDateTime: toKST(result.createdDateTime) };
@@ -132,12 +134,13 @@ export async function sendChannelMessage(
 export async function sendChatMessage(
   chatId: string,
   text: string,
+  format: MessageFormat = "markdown",
 ): Promise<unknown> {
   const client = createClient();
   const result = await client.api(`/me/chats/${chatId}/messages`).post({
     body: {
       contentType: "html",
-      content: markdownToHtml(text),
+      content: toMessageHtml(text, format),
     },
   });
   return { id: result.id, createdDateTime: toKST(result.createdDateTime) };

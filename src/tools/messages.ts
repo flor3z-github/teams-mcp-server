@@ -4,6 +4,14 @@ import type { Config } from "../config.js";
 import { validateInput } from "../utils/validators.js";
 import * as graph from "../graph/client.js";
 
+const formatProperty = {
+  type: "string",
+  enum: ["markdown", "text"],
+  description:
+    "markdown (default): text is parsed as Markdown — a leading '- ' becomes a list, backticks become code. " +
+    "text: sent exactly as written; only line breaks are kept.",
+};
+
 export const messageTools: Tool[] = [
   {
     name: "get_messages",
@@ -57,6 +65,7 @@ export const messageTools: Tool[] = [
           type: "string",
           description: "Message text (markdown supported)",
         },
+        format: formatProperty,
       },
       required: ["text"],
     },
@@ -85,6 +94,7 @@ export const messageTools: Tool[] = [
           type: "string",
           description: "Reply text (markdown supported)",
         },
+        format: formatProperty,
       },
       required: ["team_id", "channel_id", "message_id", "text"],
     },
@@ -144,12 +154,15 @@ const getMessagesSchema = z
     "Provide either (team_id + channel_id) or chat_id",
   );
 
+const formatSchema = z.enum(["markdown", "text"]).optional();
+
 const sendMessageSchema = z
   .object({
     team_id: z.string().optional(),
     channel_id: z.string().optional(),
     chat_id: z.string().optional(),
     text: z.string().min(1, "text is required"),
+    format: formatSchema,
   })
   .refine(
     (d) => (d.team_id && d.channel_id) || d.chat_id,
@@ -161,6 +174,7 @@ const replyToMessageSchema = z.object({
   channel_id: z.string().min(1, "channel_id is required"),
   message_id: z.string().min(1, "message_id is required"),
   text: z.string().min(1, "text is required"),
+  format: formatSchema,
 });
 
 const getMessageRepliesSchema = z.object({
@@ -215,12 +229,13 @@ async function handleSendMessage(
 
   let result;
   if (params.chat_id) {
-    result = await graph.sendChatMessage(params.chat_id, params.text);
+    result = await graph.sendChatMessage(params.chat_id, params.text, params.format);
   } else {
     result = await graph.sendChannelMessage(
       params.team_id!,
       params.channel_id!,
       params.text,
+      params.format,
     );
   }
 
@@ -241,6 +256,7 @@ async function handleReplyToMessage(
     params.channel_id,
     params.message_id,
     params.text,
+    params.format,
   );
   return {
     content: [

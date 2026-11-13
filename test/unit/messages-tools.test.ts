@@ -68,7 +68,7 @@ describe("send_message", () => {
       config,
     );
     expect(result.content[0].text).toContain("Message sent");
-    expect(mockSendChannelMessage).toHaveBeenCalledWith("t1", "c1", "hello");
+    expect(mockSendChannelMessage).toHaveBeenCalledWith("t1", "c1", "hello", undefined);
   });
 
   it("채팅에 메시지 전송", async () => {
@@ -78,12 +78,27 @@ describe("send_message", () => {
       config,
     );
     expect(result.content[0].text).toContain("Message sent");
-    expect(mockSendChatMessage).toHaveBeenCalledWith("chat1", "hi");
+    expect(mockSendChatMessage).toHaveBeenCalledWith("chat1", "hi", undefined);
   });
 
   it("text 누락 시 에러", async () => {
     await expect(
       messageHandlers.send_message({ chat_id: "chat1" }, config),
+    ).rejects.toThrow();
+  });
+
+  it("format=text 를 그대로 넘긴다", async () => {
+    mockSendChatMessage.mockResolvedValue({ id: "sent3" });
+    await messageHandlers.send_message(
+      { chat_id: "chat1", text: "- a", format: "text" },
+      config,
+    );
+    expect(mockSendChatMessage).toHaveBeenCalledWith("chat1", "- a", "text");
+  });
+
+  it("알 수 없는 format 은 에러", async () => {
+    await expect(
+      messageHandlers.send_message({ chat_id: "chat1", text: "x", format: "html" }, config),
     ).rejects.toThrow();
   });
 });
@@ -96,7 +111,7 @@ describe("reply_to_message", () => {
       config,
     );
     expect(result.content[0].text).toContain("Reply sent");
-    expect(mockReplyToChannelMessage).toHaveBeenCalledWith("t1", "c1", "m1", "reply");
+    expect(mockReplyToChannelMessage).toHaveBeenCalledWith("t1", "c1", "m1", "reply", undefined);
   });
 
   it("필수 파라미터 누락 시 에러", async () => {

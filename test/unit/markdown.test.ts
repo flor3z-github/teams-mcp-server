@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { markdownToHtml, htmlToMarkdown } from "../../src/utils/markdown.js";
+import { markdownToHtml, htmlToMarkdown, plainToHtml, toMessageHtml } from "../../src/utils/markdown.js";
 
 describe("markdownToHtml", () => {
   it("should convert bold", () => {
@@ -208,5 +208,23 @@ describe("htmlToMarkdown — Teams codeblock 복원", () => {
   it("일반 pre/code는 기존대로 처리한다", () => {
     const md = htmlToMarkdown("<pre><code>a\nb</code></pre>");
     expect(md).toContain("```\na\nb\n```");
+  });
+});
+
+describe("plainToHtml — 평문 전송", () => {
+  it("줄머리 '-' 와 백틱을 마크다운으로 해석하지 않는다", () => {
+    const html = plainToHtml("- a `b` **c**");
+    expect(html).toBe("- a `b` **c**");
+    expect(html).not.toContain("<li>");
+    expect(html).not.toContain("<code>");
+  });
+
+  it("줄바꿈은 <br>, HTML 특수문자는 이스케이프한다", () => {
+    expect(plainToHtml("x < y & z\n둘째 줄")).toBe("x &lt; y &amp; z<br>둘째 줄");
+  });
+
+  it("toMessageHtml 기본값은 markdown 이다", () => {
+    expect(toMessageHtml("- a")).toContain("<li>");
+    expect(toMessageHtml("- a", "text")).toBe("- a");
   });
 });
